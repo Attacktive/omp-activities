@@ -1,0 +1,44 @@
+name: 'Publish to NPM'
+on:
+  push:
+    tags: ['*']
+jobs:
+  publish:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'write'
+      id-token: 'write'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+      - name: 'Check the tag matches the version being published'
+        run: |
+          version="$(jq -r .version package.json)"
+          if [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - name: 'Install Bun'
+        uses: 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6'
+        with:
+          bun-version: 'latest'
+      - name: 'Install Bun packages'
+        run: 'bun install --frozen-lockfile'
+      - name: 'Typecheck'
+        run: 'bun run typecheck'
+      - name: 'Lint'
+        run: 'bun run lint'
+      - name: 'Test'
+        run: 'bun run test'
+      - name: 'Install Node.js'
+        uses: 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
+        with:
+          node-version: '24'
+      - name: 'Update npm'
+        run: 'npm install --global npm@latest'
+      - name: 'Publish'
+        run: 'npm publish'
+      - name: 'Release'
+        uses: 'softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64'
+        with:
+          generate_release_notes: true

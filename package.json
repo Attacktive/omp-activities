@@ -1,0 +1,42 @@
+{
+	"name": "omp-activities",
+	"version": "0.1.0",
+	"description": "An unofficial OMP plugin for compact tool history and live activity without extra AI calls",
+	"license": "MIT",
+	"type": "module",
+	"main": "src/activities.ts",
+	"files": ["src", "!src/*.test.ts"],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Attacktive/omp-activities.git"
+	},
+	"homepage": "https://github.com/Attacktive/omp-activities#readme",
+	"bugs": {
+		"url": "https://github.com/Attacktive/omp-activities/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": ["omp", "oh-my-pi", "omp-plugin", "activities", "tool-history"],
+	"author": "Attacktive",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"lint": "eslint .",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@oh-my-pi/pi-coding-agent": "^18.12.6",
+		"@oh-my-pi/pi-tui": "^18.12.6",
+		"@types/bun": "^1.4.4",
+		"eslint": "^10.13.0",
+		"jiti": "^2.7.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.72.0"
+	},
+	"omp": {
+		"name": "Activities",
+		"description": "Compact tool history and live activity, independent of tool-card visibility",
+		"extensions": ["src/activities.ts"]
+	}
+}
