@@ -18,7 +18,9 @@ const AGENT_STATE_LABELS = new Map([
 	['running', 'Running'],
 	['completed', 'Done'],
 	['failed', 'Failed'],
-	['aborted', 'Canceled']
+	['aborted', 'Canceled'],
+	['cancelled', 'Canceled'],
+	['canceled', 'Canceled']
 ]);
 
 function isLive(call: ActivityCall) {
@@ -432,6 +434,21 @@ function progressText(value: unknown) {
 	return cleanText(value).replace(/\s+/g, ' ').trim();
 }
 
+/** Terminal job snapshots supersede stale active rows, but active snapshots cannot revive terminal progress. */
+function taskAgentProgress(call: ActivityCall, value: unknown) {
+	const agent = record(value);
+	if (typeof agent.id !== 'string' || (agent.status !== 'running' && agent.status !== 'pending')) {
+		return agent;
+	}
+
+	const status = call.jobTimings?.[agent.id]?.status;
+	if (status === undefined || status === 'running' || status === 'pending' || !AGENT_STATE_LABELS.has(status)) {
+		return agent;
+	}
+
+	return { ...agent, status };
+}
+
 function taskProgress(call: ActivityCall) {
 	if (call.tool !== 'task') {
 		return [];
@@ -442,7 +459,7 @@ function taskProgress(call: ActivityCall) {
 		return [];
 	}
 
-	const agents = progress.map(record).filter(agent => typeof agent.status === 'string' && AGENT_STATE_LABELS.has(agent.status) && (progressText(agent.id) || progressText(agent.agent)));
+	const agents = progress.map(value => taskAgentProgress(call, value)).filter(agent => typeof agent.status === 'string' && AGENT_STATE_LABELS.has(agent.status) && (progressText(agent.id) || progressText(agent.agent)));
 	const active = agents.filter(agent => agent.status === 'running' || agent.status === 'pending');
 	if (active.length) {
 		return active;

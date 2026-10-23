@@ -23,3 +23,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Keep task batches active until all children settle and retain their completion output.
 - Reattach live task batches after branch navigation using persisted child-job identities and retain settled sibling states.
 - Retire consumed job associations and non-async batch members without dropping pending background deliveries.
+- Exclude snapshot-settled task siblings from live rows and overflow counts without overriding newer terminal or queued progress.

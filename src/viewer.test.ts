@@ -127,6 +127,53 @@ test
 
 test
 (
+	'excludes snapshot-settled task siblings from active rows and overflow counts',
+	() => {
+		const transitions = [['completed', 'running'], ['failed', 'running'], ['cancelled', 'pending']] as const;
+		for (const [status, progressStatus] of transitions) {
+			const history = new ActivityHistory();
+			history.start('task', 'task', {}, 100);
+
+			const progress = [
+				{ id: 'One', status: progressStatus, currentTool: 'read', currentToolArgs: 'stale.ts' },
+				{ id: 'Two', status: 'running', currentTool: 'grep', currentToolArgs: 'needle' },
+				{ id: 'Three', status: 'running' },
+				{ id: 'Four', status: 'running' }
+			];
+
+			history.finish('task', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress } }, false, 150);
+			history.syncJobs
+			(
+				{
+					running: [{ id: 'Two', status: 'running', startTime: 120 }, { id: 'Three', status: 'running', startTime: 130 }, { id: 'Four', status: 'running', startTime: 140 }],
+					recent: [{ id: 'One', status, startTime: 110, endTime: 200 }],
+					delivery: { pendingJobIds: [] }
+				}
+			);
+
+			expect(liveWidget(history.calls, 300)?.slice(1))
+				.toEqual(['Two · grep needle · Running', 'Three · Running', 'Four · Running']);
+		}
+	}
+);
+
+test
+(
+	'does not let running snapshots override terminal or queued task progress',
+	() => {
+		const history = new ActivityHistory();
+		history.start('task', 'task', {}, 100);
+		history.finish('task', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'pending' }] } }, false, 150);
+		history.syncJobs({ running: [{ id: 'One', status: 'running', startTime: 110 }, { id: 'Two', status: 'running', startTime: 120 }] });
+		history.update('task', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'completed', currentTool: 'read', currentToolArgs: 'stale.ts' }, { id: 'Two', status: 'pending' }] } }, 200);
+
+		expect(liveWidget(history.calls, 300)?.slice(1))
+			.toEqual(['Two · Pending']);
+	}
+);
+
+test
+(
 	'sanitizes agent progress and uses current intent only when no target is reported',
 	() => {
 		const history = new ActivityHistory();
