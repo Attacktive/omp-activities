@@ -63,8 +63,8 @@ function rowText(call: ActivityCall) {
 class ActivityViewer implements Component {
 	#history: ActivityHistory;
 	#tui: TUI;
-	#theme: Theme;
-	#done: () => void;
+	readonly #theme: Theme;
+	readonly #done: () => void;
 	#selectedId?: string;
 	#details = false;
 	#offset = 0;
