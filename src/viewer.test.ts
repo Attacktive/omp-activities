@@ -20,6 +20,20 @@ interface FixtureCommand {
 
 type ViewerFactory = (tui: unknown, theme: unknown, keys: unknown, done: () => void) => InstanceType<typeof ActivityViewer>;
 
+function expectToContainAll(actual: string, expected: readonly string[]) {
+	for (const text of expected) {
+		expect(actual)
+			.toContain(text);
+	}
+}
+
+function expectToContainNone(actual: string, unexpected: readonly string[]) {
+	for (const text of unexpected) {
+		expect(actual)
+			.not.toContain(text);
+	}
+}
+
 test
 (
 	'constrains narrow footer and fullscreen height bounds in a 20x10 terminal',
@@ -74,10 +88,7 @@ test
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'running', recentTools: [{ tool: 'read', args: 'agent/STYLE.md' }] }] } });
 
 		const running = liveWidget(history.calls, 2100, 120, theme as never)!.join('\n');
-		for (const text of ['Audit', 'Running']) {
-			expect(running)
-				.toContain(text);
-		}
+		expectToContainAll(running, ['Audit', 'Running']);
 
 		expect(liveWidget(history.calls, 2100, 120, theme as never)?.join('\n'))
 			.not.toContain('read');
@@ -85,10 +96,7 @@ test
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'completed', currentTool: 'read', currentToolArgs: 'stale.ts' }] } });
 
 		const completed = liveWidget(history.calls, 2200, 120, theme as never)!.join('\n');
-		for (const text of ['Audit', 'Done']) {
-			expect(completed)
-				.toContain(text);
-		}
+		expectToContainAll(completed, ['Audit', 'Done']);
 
 		expect(liveWidget(history.calls, 2200, 120, theme as never)?.join('\n'))
 			.not.toContain('stale.ts');
@@ -123,15 +131,9 @@ test
 		expect(lines)
 			.toHaveLength(5);
 
-		for (const text of ['main.ts', 'One', 'grep needle', 'Two', 'Pending', '+2 more']) {
-			expect(rendered)
-				.toContain(text);
-		}
+		expectToContainAll(rendered, ['main.ts', 'One', 'grep needle', 'Two', 'Pending', '+2 more']);
 
-		for (const text of ['Old', 'Three', 'Four', 'stale']) {
-			expect(rendered)
-				.not.toContain(text);
-		}
+		expectToContainNone(rendered, ['Old', 'Three', 'Four', 'stale']);
 	}
 );
 
@@ -166,10 +168,7 @@ test
 			expect(lines)
 				.toHaveLength(4);
 
-			for (const name of ['Two', 'Three', 'Four']) {
-				expect(lines.join('\n'))
-					.toContain(name);
-			}
+			expectToContainAll(lines.join('\n'), ['Two', 'Three', 'Four']);
 
 			expect(lines.join('\n'))
 				.not.toContain('One');
@@ -232,10 +231,7 @@ test
 		expect(rendered)
 			.toContain('Review · read Inspecting rules');
 
-		for (const text of ['\x1b', 'secret', 'ignored']) {
-			expect(rendered)
-				.not.toContain(text);
-		}
+		expectToContainNone(rendered, ['\x1b', 'secret', 'ignored']);
 	}
 );
 
@@ -250,10 +246,7 @@ test
 			history.update('task', { details: { progress } });
 
 			const rendered = liveWidget(history.calls, 2000, 120, theme as never)!.join('\n');
-			for (const text of ['task', 'Reviewing code', '1.0s']) {
-				expect(rendered)
-					.toContain(text);
-			}
+			expectToContainAll(rendered, ['task', 'Reviewing code', '1.0s']);
 		}
 	}
 );
