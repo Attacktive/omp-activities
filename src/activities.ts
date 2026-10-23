@@ -60,13 +60,13 @@ function activity(pi: ExtensionAPI) {
 		observedLeaf = leaf;
 	}
 
-	function refresh() {
+	function refresh(consumedResult?: unknown) {
 		if (!context || context.agent.kind !== 'main') {
 			return;
 		}
 
 		syncReset(context);
-		for (const call of history.syncJobs(context.getAsyncJobSnapshot())) {
+		for (const call of history.syncJobs(context.getAsyncJobSnapshot(), consumedResult)) {
 			persist(call);
 		}
 
@@ -251,7 +251,7 @@ function activity(pi: ExtensionAPI) {
 				persist(call);
 			}
 
-			refresh();
+			refresh(event.result);
 		}
 	);
 

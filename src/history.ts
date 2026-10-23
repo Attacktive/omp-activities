@@ -246,8 +246,23 @@ class ActivityHistory {
 		this.#liveJobs.delete(call);
 	}
 
-	/** Missing delivery metadata is not evidence that a completion was consumed. */
-	#retireSettledJobs(snapshot: Record<string, unknown>, jobs: ReadonlyMap<unknown, Record<string, unknown>>) {
+	/** Receipt commitment can precede message events, so only explicit consumption retires undelivered results. */
+	#retireSettledJobs(snapshot: Record<string, unknown>, jobs: ReadonlyMap<unknown, Record<string, unknown>>, consumedResult: unknown) {
+		const consumed = record(record(consumedResult).details);
+		if ((consumed.op === 'wait' || consumed.op === 'cancel') && Array.isArray(consumed.jobs)) {
+			for (const raw of consumed.jobs) {
+				const job = record(raw);
+				if (typeof job.id === 'string' && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled')) {
+					const call = this.#jobs.get(job.id);
+					if (call && (call.state === 'background' || call.state === 'interrupted') && !jobs.has(job.id)) {
+						continue;
+					}
+
+					this.#retireJob(job.id);
+				}
+			}
+		}
+
 		const pendingJobIds = record(snapshot.delivery).pendingJobIds;
 		if (!Array.isArray(pendingJobIds)) {
 			return;
@@ -264,10 +279,10 @@ class ActivityHistory {
 				continue;
 			}
 
-			const timing = call.jobTimings?.[id];
-			const terminal = call.state !== 'background' && call.state !== 'running' && call.state !== 'interrupted';
-			const settledChild = timing && timing.status !== 'running' && timing.status !== 'pending';
-			if (terminal || settledChild || (job && job.status !== 'running' && job.startTime === call.jobStartedAt)) {
+			const canceled = job?.status === 'cancelled' && (job.startTime === call.jobStartedAt || job.startTime === call.jobTimings?.[id]?.startedAt);
+			const details = record(record(call.result).details);
+			const blocking = call.tool === 'task' && !job && id !== record(details.async).jobId && Array.isArray(details.results) && details.results.some(result => record(result).id === id);
+			if (canceled || blocking) {
 				this.#retireJob(id);
 			}
 		}
@@ -348,7 +363,7 @@ class ActivityHistory {
 	}
 
 	/** Uses the host's read-only job snapshot, not tool polling or model turns. */
-	syncJobs(snapshot: unknown) {
+	syncJobs(snapshot: unknown, consumedResult?: unknown) {
 		const jobs = record(snapshot);
 		const rows: unknown[] = [];
 
@@ -361,6 +376,29 @@ class ActivityHistory {
 		}
 
 		const byId = new Map(rows.map(job => [record(job).id, record(job)]));
+		const consumed = record(record(consumedResult).details);
+		if ((consumed.op === 'wait' || consumed.op === 'cancel') && Array.isArray(consumed.jobs)) {
+			for (const raw of consumed.jobs) {
+				const job = record(raw);
+				if (typeof job.id !== 'string' || byId.has(job.id) || (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled')) {
+					continue;
+				}
+
+				const call = this.#jobs.get(job.id);
+				const startTime = call?.jobTimings?.[job.id]?.startedAt ?? call?.jobStartedAt;
+				if (startTime === undefined) {
+					continue;
+				}
+
+				const recovered: Record<string, unknown> = { id: job.id, status: job.status, startTime };
+				if (typeof job.durationMs === 'number' && Number.isFinite(job.durationMs) && job.durationMs >= 0) {
+					recovered.endTime = startTime + job.durationMs;
+				}
+
+				byId.set(job.id, recovered);
+			}
+		}
+
 		const changed: ActivityCall[] = [];
 		const batches = new Set<ActivityCall>();
 		for (const [jobId, call] of this.#jobs) {
@@ -399,7 +437,7 @@ class ActivityHistory {
 			}
 		}
 
-		this.#retireSettledJobs(jobs, byId);
+		this.#retireSettledJobs(jobs, byId, consumedResult);
 
 		return changed;
 	}

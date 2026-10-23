@@ -401,7 +401,8 @@ test
 				running: [],
 				recent: [{ id: 'bg_1', status: 'completed', startTime: 110, endTime: 300 }, { id: 'bg_2', status: 'failed', startTime: 120, endTime: 400 }],
 				delivery: { pendingJobIds: ['bg_2'] }
-			}
+			},
+			{ details: { op: 'wait', jobs: [{ id: 'bg_1', status: 'completed', resultText: 'consumed output' }, { id: 'bg_2', status: 'running' }] } }
 		);
 
 		history.syncJobs(null);
@@ -432,7 +433,8 @@ test
 				running: [{ id: 'Two', status: 'running', startTime: 120 }],
 				recent: [{ id: 'One', status: 'failed', startTime: 110, endTime: 300 }],
 				delivery: { pendingJobIds: [] }
-			}
+			},
+			{ details: { op: 'wait', jobs: [{ id: 'One', status: 'failed', errorText: 'consumed failure' }, { id: 'Two', status: 'running' }] } }
 		);
 
 		history.deliver({ customType: 'async-result', content: 'unrelated first child', details: { jobs: [{ jobId: 'One', status: 'completed' }] } });
@@ -440,7 +442,12 @@ test
 		expect([call.state, call.delivery])
 			.toEqual(['background', undefined]);
 
-		history.syncJobs({ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 500 }], delivery: { pendingJobIds: [] } });
+		history.syncJobs
+		(
+			{ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 500 }], delivery: { pendingJobIds: [] } },
+			{ details: { op: 'wait', jobs: [{ id: 'Two', status: 'completed', resultText: 'consumed output' }] } }
+		);
+
 		history.deliver({ customType: 'async-result', content: 'unrelated second child', details: { jobs: [{ jobId: 'Two', status: 'completed' }] } });
 
 		expect([call.state, call.endedAt, call.delivery])
@@ -454,7 +461,7 @@ test
 	() => {
 		const history = new ActivityHistory();
 		const call = history.start('mixed', 'task', {}, 100);
-		history.finish('mixed', { details: { async: { type: 'task', state: 'completed', jobId: 'Async' }, progress: [{ id: 'Async', status: 'completed' }, { id: 'Blocking', status: 'completed' }] } }, false, 500);
+		history.finish('mixed', { details: { async: { type: 'task', state: 'completed', jobId: 'Async' }, results: [{ id: 'Blocking' }], progress: [{ id: 'Async', status: 'completed' }, { id: 'Blocking', status: 'completed' }] } }, false, 500);
 		history.syncJobs({ running: [], recent: [], delivery: { pendingJobIds: ['Async'] } });
 		history.deliver({ customType: 'async-result', content: 'unrelated blocking name', details: { jobs: [{ jobId: 'Blocking', status: 'completed' }] } });
 
@@ -527,5 +534,40 @@ test
 
 		expect(batch.state)
 			.toBe('background');
+	}
+);
+
+test
+(
+	'reconciles wait-consumed jobs omitted from the five recent snapshot rows',
+	() => {
+		const history = new ActivityHistory();
+		const running = [];
+		const completed = [];
+		const consumed = [];
+		for (let index = 0; index < 6; index++) {
+			const id = `job-${index}`;
+			const startTime = 110 + index;
+			history.start(id, 'bash', {}, 100);
+			history.finish(id, { details: { async: { state: 'running', jobId: id } } }, false, 150);
+			running.push({ id, status: 'running', startTime });
+			completed.push({ id, status: 'completed', startTime, endTime: startTime + 500 });
+			consumed.push({ id, status: 'completed', durationMs: 500, resultText: `output-${index}` });
+		}
+
+		history.syncJobs({ running, recent: [] });
+		history.syncJobs
+		(
+			{ running: [], recent: completed.slice(1), delivery: { pendingJobIds: [] } },
+			{ details: { op: 'wait', jobs: consumed } }
+		);
+
+		expect(history.calls.map(call => [call.state, call.endedAt]))
+			.toEqual([['done', 610], ['done', 611], ['done', 612], ['done', 613], ['done', 614], ['done', 615]]);
+
+		history.deliver({ customType: 'async-result', content: 'unrelated reuse', details: { jobs: [{ jobId: 'job-0', status: 'failed' }] } });
+
+		expect([history.calls[0]!.state, history.calls[0]!.delivery])
+			.toEqual(['done', undefined]);
 	}
 );
