@@ -47,15 +47,24 @@ function rowLabel(call: ActivityCall) {
 	return `${cleanText(call.tool)}  ${describeTarget(call.args)}`;
 }
 
+function rowStatus(call: ActivityCall) {
+	const result = outcome(call);
+	if (result) {
+		return `${STATE_LABELS[call.state]} ${result}`;
+	}
+
+	return STATE_LABELS[call.state];
+}
+
 function rowText(call: ActivityCall) {
-	return `${rowLabel(call)}  ${STATE_LABELS[call.state]}`;
+	return `${rowLabel(call)}  ${rowStatus(call)}`;
 }
 
 class ActivityViewer implements Component {
 	#history: ActivityHistory;
 	#tui: TUI;
-	#theme: Theme;
-	#done: () => void;
+	readonly #theme: Theme;
+	readonly #done: () => void;
 	#selectedId?: string;
 	#details = false;
 	#offset = 0;
@@ -180,7 +189,7 @@ class ActivityViewer implements Component {
 
 		this.#searchStatus = '';
 		if (this.#details) {
-			const lines = this.#detailLines(this.#cacheWidth || Math.max(1, this.#tui.terminal.columns - 2));
+			const lines = this.#detailLines(this.#cacheWidth || Math.max(1, this.#tui.terminal.columns - 6));
 			let cursor = this.#offset;
 			const matchOffset = this.#detailMatch;
 			if (matchOffset !== undefined) {
@@ -316,6 +325,58 @@ class ActivityViewer implements Component {
 		this.#tui.requestRender();
 	}
 
+	#callLine(call: ActivityCall, width: number, now: number, selected: boolean) {
+		const labelText = rowLabel(call);
+		const source = rowText(call);
+		const toolWidth = visibleWidth(cleanText(call.tool));
+		const metadataWidth = Math.max(0, width - toolWidth - 3);
+		let statusLabel = rowStatus(call);
+		if (visibleWidth(statusLabel) > metadataWidth) {
+			statusLabel = STATE_LABELS[call.state];
+		}
+
+		let status = stateText(call, this.#theme, this.#highlight(statusLabel, source, labelText.length + 2));
+		if (selected) {
+			status = this.#theme.bold(status);
+		}
+
+		if (width >= 40) {
+			const duration = `  ${elapsed(call, now)}`;
+			if (visibleWidth(status) + visibleWidth(duration) <= metadataWidth) {
+				status += this.#theme.fg('dim', duration);
+			}
+		}
+
+		status = truncateToWidth(status, metadataWidth);
+
+		let marker = '▸ ';
+		if (selected && this.#details) {
+			marker = '▾ ';
+		}
+
+		let prefix = this.#theme.fg('dim', marker);
+		if (selected) {
+			prefix = this.#theme.fg('accent', marker);
+		}
+
+		const available = Math.max(0, width - visibleWidth(status) - 3);
+		let start = 0;
+		const match = this.#matches(source);
+		if (selected && match && match.index < labelText.length && visibleWidth(labelText.slice(0, match.index + match[0].length)) > available) {
+			start = match.index;
+		}
+
+		const visibleLabel = sliceWithWidth(labelText.slice(start), 0, available, true).text;
+		const label = `${prefix}${this.#highlight(visibleLabel, source, start)}`;
+		let row = `${label}${' '.repeat(Math.max(1, width - visibleWidth(label) - visibleWidth(status)))}${status}`;
+
+		if (selected) {
+			row = this.#theme.bg('selectedBg', row);
+		}
+
+		return row;
+	}
+
 	render(width: number) {
 		const height = Math.max(4, this.#tui.terminal.rows);
 		const inner = Math.max(1, width - 2);
@@ -326,11 +387,11 @@ class ActivityViewer implements Component {
 			this.#selectedId = selected.id;
 		}
 
-		const heading = this.#theme.fg('accent', this.#theme.bold('Tool history'));
-		const lines = [heading, this.#theme.fg('dim', '─'.repeat(inner))];
-		let action = '↑↓ Select · Enter Details · Esc/q Close';
+		const heading = this.#theme.fg('accent', this.#theme.bold('Activity history'));
+		const lines = [heading];
+		let action = '↑↓ Select · Enter Expand · Esc/q Close';
 		if (this.#details) {
-			action = '↑↓ Scroll · Enter/Esc/q Back';
+			action = '↑↓ Scroll · Enter/Esc/q Collapse';
 		}
 
 		let help = [
@@ -338,7 +399,7 @@ class ActivityViewer implements Component {
 			...wrapTextWithAnsi('Home/g Top · End/G Bottom · /? Search · n/N Repeat', inner)
 		];
 
-		const footerBudget = Math.max(1, height - 6);
+		const footerBudget = Math.max(1, height - 4);
 		if (help.length > footerBudget) {
 			help = wrapTextWithAnsi('↑↓ PgUp/PgDn · Home/g End/G · Enter/q/Esc · /? n/N', inner);
 		}
@@ -347,56 +408,55 @@ class ActivityViewer implements Component {
 			help = wrapTextWithAnsi('q/Esc Back · /? n/N', inner).slice(0, footerBudget);
 		}
 
-		this.#pageSize = Math.max(1, height - 5 - help.length);
+		const showSummary = height >= 5;
+		let bodyBudget = height - 2 - help.length;
+		if (showSummary) {
+			bodyBudget--;
+		}
+
+		this.#pageSize = Math.max(1, bodyBudget);
+		let summary = `Call ${selectedIndex + 1} / ${calls.length}`;
 		if (!selected) {
 			lines.push('No tool calls recorded on this branch.');
-		} else if (this.#details) {
-			lines.push(`${this.#highlight(cleanText(selected.tool))} · ${stateText(selected, this.#theme, this.#highlight(STATE_LABELS[selected.state]))}`);
-
-			const detailLines = this.#detailLines(inner);
-			this.#offset = Math.min(this.#offset, Math.max(0, detailLines.length - this.#pageSize));
-
-			lines.push(...detailLines.slice(this.#offset, this.#offset + this.#pageSize).map(line => this.#highlight(line)));
-			lines.push(this.#theme.fg('dim', `Lines ${this.#offset + 1}–${Math.min(this.#offset + this.#pageSize, detailLines.length)} / ${detailLines.length}`));
+			summary = '';
 		} else {
-			const start = Math.max(0, Math.min(selectedIndex - this.#pageSize + 1, calls.length - this.#pageSize));
-			for (let index = start; index < Math.min(calls.length, start + this.#pageSize); index++) {
+			let contextRows = this.#pageSize;
+			if (this.#details) {
+				contextRows = Math.min(3, calls.length, Math.max(1, Math.floor(bodyBudget / 3)));
+				this.#pageSize = Math.max(1, bodyBudget - contextRows);
+			}
+
+			let start = Math.max(0, Math.min(selectedIndex - contextRows + 1, calls.length - contextRows));
+			if (this.#details) {
+				const preceding = Math.min(1, contextRows - 1);
+				start = Math.max(0, Math.min(selectedIndex - preceding, calls.length - contextRows));
+			}
+
+			const now = Date.now();
+			for (let index = start; index < Math.min(calls.length, start + contextRows); index++) {
 				const call = calls[index]!;
-				let prefix = '  ';
-				if (call.id === selected.id) {
-					prefix = this.#theme.fg('accent', '› ');
+				lines.push(this.#callLine(call, inner, now, call.id === selected.id));
+				if (call.id !== selected.id || !this.#details || bodyBudget <= contextRows) {
+					continue;
 				}
 
-				const labelText = rowLabel(call);
-				const source = rowText(call);
-				let status = stateText(call, this.#theme, this.#highlight(STATE_LABELS[call.state], source, labelText.length + 2));
-				if (call.id === selected.id) {
-					status = this.#theme.bold(status);
+				const detailLines = this.#detailLines(Math.max(1, inner - 4));
+				this.#offset = Math.min(this.#offset, Math.max(0, detailLines.length - this.#pageSize));
+				const end = Math.min(this.#offset + this.#pageSize, detailLines.length);
+				for (let detail = this.#offset; detail < end; detail++) {
+					let branch = '  │ ';
+					if (detail === detailLines.length - 1) {
+						branch = '  └ ';
+					}
+
+					lines.push(`${this.#theme.fg('dim', branch)}${this.#highlight(detailLines[detail]!)}`);
 				}
 
-				const available = Math.max(1, inner - visibleWidth(status) - 4);
-				let start = 0;
-				const match = this.#matches(source);
-				if (call.id === selected.id && match && match.index < labelText.length && visibleWidth(labelText.slice(0, match.index + match[0].length)) > available) {
-					start = match.index;
-				}
-
-				const visibleLabel = sliceWithWidth(labelText.slice(start), 0, available).text;
-				const label = `${prefix}${this.#highlight(visibleLabel, source, start)}`;
-				let row = `${label}${' '.repeat(Math.max(1, inner - visibleWidth(label) - visibleWidth(status)))}${status}`;
-				if (call.id === selected.id) {
-					row = this.#theme.bg('selectedBg', row);
-				}
-
-				lines.push(row);
+				summary += ` · Lines ${this.#offset + 1}–${end} / ${detailLines.length}`;
 			}
+		}
 
-			const result = outcome(selected);
-			let summary = `Call ${selectedIndex + 1} / ${calls.length}`;
-			if (result) {
-				summary += ` · ${result}`;
-			}
-
+		if (showSummary) {
 			lines.push(this.#theme.fg('dim', summary));
 		}
 
@@ -405,7 +465,7 @@ class ActivityViewer implements Component {
 		}
 
 		if (this.#searchInput) {
-			lines.push(...this.#searchInput.render(inner));
+			lines.push(...this.#searchInput.render(inner).slice(0, 1));
 		} else {
 			let status = this.#searchStatus;
 			if (!status && this.#pattern) {
@@ -468,49 +528,94 @@ function taskProgress(call: ActivityCall) {
 	return agents;
 }
 
-function agentActivity(agent: Record<string, unknown>) {
-	const name = progressText(agent.id) || progressText(agent.agent);
-	const state = AGENT_STATE_LABELS.get(String(agent.status));
-	const tool = progressText(agent.currentTool);
-	if (agent.status !== 'running' || !tool) {
-		return `${name} · ${state}`;
+function alignedText(label: string, metadata: string, width: number) {
+	const available = Math.max(0, width - visibleWidth(metadata) - 1);
+	if (available === 0) {
+		return truncateToWidth(metadata, width);
 	}
 
-	const target = progressText(agent.currentToolArgs) || progressText(agent.currentToolIntent);
-	if (target) {
-		return `${name} · ${tool} ${target} · ${state}`;
-	}
+	const left = truncateToWidth(label, available);
 
-	return `${name} · ${tool} · ${state}`;
+	return `${left}${' '.repeat(width - visibleWidth(left) - visibleWidth(metadata))}${metadata}`;
 }
 
-function liveWidget(calls: readonly ActivityCall[], now: number) {
+function agentActivity(agent: Record<string, unknown>, width: number, theme: Theme) {
+	const name = progressText(agent.id) || progressText(agent.agent);
+	const state = AGENT_STATE_LABELS.get(String(agent.status))!;
+	const tool = progressText(agent.currentTool);
+	let label = name;
+	if (agent.status === 'running' && tool) {
+		label += ` · ${theme.bold(tool)}`;
+		const target = progressText(agent.currentToolArgs) || progressText(agent.currentToolIntent);
+		if (target) {
+			label += ` ${target}`;
+		}
+	}
+
+	let status = theme.fg('dim', state);
+	if (agent.status === 'running') {
+		status = theme.fg('accent', state);
+	} else if (agent.status === 'failed') {
+		status = theme.fg('error', state);
+	} else if (agent.status === 'completed') {
+		status = theme.fg('success', state);
+	} else if (agent.status !== 'pending') {
+		status = theme.fg('warning', state);
+	}
+
+	return alignedText(label, status, width);
+}
+
+function liveWidget(calls: readonly ActivityCall[], now: number, width: number, theme: Theme) {
 	const running = calls.filter(isLive);
 	if (!running.length) {
 		return undefined;
 	}
 
-	const lines = [`Activity · active calls: ${running.length} · /activities`];
+	let heading = ` ${theme.fg('accent', theme.bold('ACTIVITY'))}${theme.fg('dim', ` · ${running.length} active`)}`;
+	const hint = theme.fg('dim', '/activities');
+	if (visibleWidth(heading) + visibleWidth(hint) + 4 <= width) {
+		heading = alignedText(heading, hint, width);
+	}
+
+	const rows: string[] = [];
+	const contentWidth = Math.max(0, width - 4);
 	let rowCount = 0;
 	for (const call of running) {
 		const agents = taskProgress(call);
 		if (agents.length) {
 			for (const agent of agents) {
 				rowCount++;
-				if (lines.length <= 3) {
-					lines.push(agentActivity(agent));
+				if (rows.length < 3) {
+					rows.push(agentActivity(agent, contentWidth, theme));
 				}
 			}
 		} else {
 			rowCount++;
-			if (lines.length <= 3) {
-				lines.push(`${cleanText(call.tool)}  ${describeTarget(call.args)} · ${elapsed(call, now)} · ${STATE_LABELS[call.state]}`);
+			if (rows.length < 3) {
+				let metadata = elapsed(call, now);
+				if (call.state === 'background') {
+					metadata = `${STATE_LABELS[call.state]}  ${metadata}`;
+				}
+
+				const label = `${theme.bold(cleanText(call.tool))}  ${describeTarget(call.args)}`;
+				rows.push(alignedText(label, theme.fg('dim', metadata), contentWidth));
 			}
 		}
 	}
 
 	if (rowCount > 3) {
-		lines.push(`+${rowCount - 3} more`);
+		rows.push(theme.fg('dim', `+${rowCount - 3} more`));
+	}
+
+	const lines = [truncateToWidth(heading, width)];
+	for (let index = 0; index < rows.length; index++) {
+		let branch = ' ├─ ';
+		if (index === rows.length - 1) {
+			branch = ' └─ ';
+		}
+
+		lines.push(truncateToWidth(`${theme.fg('dim', branch)}${rows[index]}`, width));
 	}
 
 	return lines;

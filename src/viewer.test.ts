@@ -3,6 +3,8 @@ import { visibleWidth } from '@oh-my-pi/pi-tui';
 import { ActivityHistory } from './history';
 import { ActivityViewer, liveWidget } from './viewer';
 
+const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text, inverse: (text: string) => `[${text}]` };
+
 interface FixtureEntry {
 	id: string;
 	parentId: string | null;
@@ -17,6 +19,20 @@ interface FixtureCommand {
 }
 
 type ViewerFactory = (tui: unknown, theme: unknown, keys: unknown, done: () => void) => InstanceType<typeof ActivityViewer>;
+
+function expectToContainAll(actual: string, expected: readonly string[]) {
+	for (const text of expected) {
+		expect(actual)
+			.toContain(text);
+	}
+}
+
+function expectToContainNone(actual: string, unexpected: readonly string[]) {
+	for (const text of unexpected) {
+		expect(actual)
+			.not.toContain(text);
+	}
+}
 
 test
 (
@@ -33,9 +49,6 @@ test
 				.toBeLessThanOrEqual(18);
 		}
 
-		expect(listLines.join('\n'))
-			.toContain('Enter/q/Esc');
-
 		viewer.handleInput('\r');
 		const detailLines = viewer.render(20);
 
@@ -46,9 +59,6 @@ test
 			expect(visibleWidth(line))
 				.toBeLessThanOrEqual(18);
 		}
-
-		expect(detailLines.join('\n'))
-			.toContain('Enter/q/Esc');
 	}
 );
 
@@ -59,7 +69,7 @@ test
 		const history = new ActivityHistory();
 		history.start('bash', 'bash', { command: 'sleep 1' }, 1000);
 
-		expect(liveWidget(history.calls, 1300)?.join('\n'))
+		expect(liveWidget(history.calls, 1300, 120, theme as never)?.join('\n'))
 			.toContain('0.3s');
 	}
 );
@@ -72,23 +82,23 @@ test
 		history.start('task', 'task', {}, 1000);
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'running', currentTool: 'read', currentToolArgs: 'agent/STYLE.md' }] } });
 
-		expect(liveWidget(history.calls, 2000)?.join('\n'))
+		expect(liveWidget(history.calls, 2000, 120, theme as never)?.join('\n'))
 			.toContain('Audit · read agent/STYLE.md');
 
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'running', recentTools: [{ tool: 'read', args: 'agent/STYLE.md' }] }] } });
 
-		expect(liveWidget(history.calls, 2100)?.join('\n'))
-			.toContain('Audit · Running');
+		const running = liveWidget(history.calls, 2100, 120, theme as never)!.join('\n');
+		expectToContainAll(running, ['Audit', 'Running']);
 
-		expect(liveWidget(history.calls, 2100)?.join('\n'))
+		expect(liveWidget(history.calls, 2100, 120, theme as never)?.join('\n'))
 			.not.toContain('read');
 
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'completed', currentTool: 'read', currentToolArgs: 'stale.ts' }] } });
 
-		expect(liveWidget(history.calls, 2200)?.join('\n'))
-			.toContain('Audit · Done');
+		const completed = liveWidget(history.calls, 2200, 120, theme as never)!.join('\n');
+		expectToContainAll(completed, ['Audit', 'Done']);
 
-		expect(liveWidget(history.calls, 2200)?.join('\n'))
+		expect(liveWidget(history.calls, 2200, 120, theme as never)?.join('\n'))
 			.not.toContain('stale.ts');
 	}
 );
@@ -115,13 +125,15 @@ test
 				}
 			});
 
-		const lines = liveWidget(history.calls, 2000)!;
+		const lines = liveWidget(history.calls, 2000, 120, theme as never)!;
+		const rendered = lines.join('\n');
 
-		expect(lines.slice(1))
-			.toEqual(['read  main.ts · 1.0s · Running', 'One · grep needle · Running', 'Two · Pending', '+2 more']);
+		expect(lines)
+			.toHaveLength(5);
 
-		expect(lines.join('\n'))
-			.not.toContain('Old');
+		expectToContainAll(rendered, ['main.ts', 'One', 'grep needle', 'Two', 'Pending', '+2 more']);
+
+		expectToContainNone(rendered, ['Old', 'Three', 'Four', 'stale']);
 	}
 );
 
@@ -151,8 +163,18 @@ test
 				}
 			);
 
-			expect(liveWidget(history.calls, 300)?.slice(1))
-				.toEqual(['Two · grep needle · Running', 'Three · Running', 'Four · Running']);
+			const lines = liveWidget(history.calls, 300, 120, theme as never)!;
+
+			expect(lines)
+				.toHaveLength(4);
+
+			expectToContainAll(lines.join('\n'), ['Two', 'Three', 'Four']);
+
+			expect(lines.join('\n'))
+				.not.toContain('One');
+
+			expect(lines.join('\n'))
+				.not.toContain('stale.ts');
 		}
 	}
 );
@@ -167,8 +189,19 @@ test
 		history.syncJobs({ running: [{ id: 'One', status: 'running', startTime: 110 }, { id: 'Two', status: 'running', startTime: 120 }] });
 		history.update('task', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'completed', currentTool: 'read', currentToolArgs: 'stale.ts' }, { id: 'Two', status: 'pending' }] } }, 200);
 
-		expect(liveWidget(history.calls, 300)?.slice(1))
-			.toEqual(['Two · Pending']);
+		const lines = liveWidget(history.calls, 300, 120, theme as never)!;
+
+		expect(lines)
+			.toHaveLength(2);
+
+		expect(lines.join('\n'))
+			.toContain('Two');
+
+		expect(lines.join('\n'))
+			.toContain('Pending');
+
+		expect(lines.join('\n'))
+			.not.toContain('One');
 	}
 );
 
@@ -190,8 +223,15 @@ test
 				}
 			});
 
-		expect(liveWidget(history.calls, 2000)?.slice(1))
-			.toEqual(['Audit Next · bash pwd here · Running', 'Review · read Inspecting rules · Running']);
+		const rendered = liveWidget(history.calls, 2000, 120, theme as never)!.join('\n');
+
+		expect(rendered)
+			.toContain('Audit Next · bash pwd here');
+
+		expect(rendered)
+			.toContain('Review · read Inspecting rules');
+
+		expectToContainNone(rendered, ['\x1b', 'secret', 'ignored']);
 	}
 );
 
@@ -205,9 +245,27 @@ test
 		for (const progress of [undefined, {}, [null, { status: 'unknown' }]]) {
 			history.update('task', { details: { progress } });
 
-			expect(liveWidget(history.calls, 2000)?.slice(1))
-				.toEqual(['task  Reviewing code · 1.0s · Running']);
+			const rendered = liveWidget(history.calls, 2000, 120, theme as never)!.join('\n');
+			expectToContainAll(rendered, ['task', 'Reviewing code', '1.0s']);
 		}
+	}
+);
+
+test
+(
+	'preserves live runtime metadata when long targets fill a narrow widget',
+	() => {
+		const history = new ActivityHistory();
+		history.start('read', 'read', { path: 'very/long/目標/'.repeat(20) }, 1000);
+		const lines = liveWidget(history.calls, 2300, 24, theme as never)!;
+
+		for (const line of lines) {
+			expect(visibleWidth(line))
+				.toBeLessThanOrEqual(24);
+		}
+
+		expect(lines[1])
+			.toContain('1.3s');
 	}
 );
 
@@ -226,7 +284,6 @@ function fixture(rows = 16) {
 	}
 
 	const tui = { terminal: { rows }, requestRender: () => {} };
-	const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text, inverse: (text: string) => `[${text}]` };
 	let closed = false;
 	const viewer = new ActivityViewer(history, tui as never, theme as never, () => { closed = true; });
 
@@ -235,6 +292,181 @@ function fixture(rows = 16) {
 
 	return { history, viewer, screen, isClosed: () => closed };
 }
+
+test
+(
+	'expands details beneath the selected call without losing chronological neighbors',
+	() => {
+		const { viewer, screen, isClosed } = fixture(24);
+		viewer.handleInput('\x1b[A');
+		const collapsed = screen();
+
+		expect(collapsed)
+			.not.toContain('hidden needle');
+
+		viewer.handleInput('\r');
+		const expanded = screen();
+		const first = expanded.indexOf('alpha.ts');
+		const selected = expanded.indexOf('beta.ts');
+		const details = expanded.indexOf('hidden needle');
+		const last = expanded.indexOf('gamma.ts');
+
+		expect(first)
+			.toBeGreaterThanOrEqual(0);
+
+		expect(selected)
+			.toBeGreaterThan(first);
+
+		expect(details)
+			.toBeGreaterThan(selected);
+
+		expect(last)
+			.toBeGreaterThan(details);
+
+		viewer.handleInput('\x1b');
+
+		expect(screen())
+			.not.toContain('hidden needle');
+
+		expect(isClosed())
+			.toBe(false);
+
+		viewer.handleInput('\r');
+
+		expect(screen())
+			.toContain('hidden needle');
+	}
+);
+
+test
+(
+	'keeps call context while scrolling expanded output to its end',
+	() => {
+		const { viewer, history, screen } = fixture(16);
+		history.update('last', { content: [{ type: 'text', text: Array.from({ length: 30 }, (_, index) => `output ${index}`).join('\n') }] });
+		viewer.handleInput('\r');
+		screen();
+		viewer.handleInput('G');
+		const expanded = screen();
+
+		expect(expanded)
+			.toContain('output 29');
+
+		expect(expanded)
+			.toContain('beta.ts');
+
+		expect(expanded)
+			.toContain('gamma.ts');
+
+		viewer.handleInput('\r');
+
+		expect(screen())
+			.not.toContain('output 29');
+
+		viewer.handleInput('\x1b[A');
+		viewer.handleInput('\r');
+		screen();
+		viewer.handleInput('G');
+
+		expect(screen())
+			.toContain('hidden needle');
+	}
+);
+
+test
+(
+	'fits collapsed and expanded history within short and narrow terminal bounds',
+	() => {
+		for (const rows of [4, 6, 10]) {
+			const { viewer } = fixture(rows);
+			for (const width of [8, 20, 40]) {
+				for (const key of ['\r', '\r']) {
+					viewer.handleInput(key);
+					const lines = viewer.render(width);
+
+					expect(lines.length)
+						.toBeLessThanOrEqual(rows);
+
+					for (const line of lines) {
+						expect(visibleWidth(line))
+							.toBeLessThanOrEqual(width - 2);
+					}
+				}
+			}
+		}
+	}
+);
+
+test
+(
+	'keeps the expanded call and its output reachable when only one context row fits',
+	() => {
+		const { viewer, history } = fixture(10);
+		history.calls[2]!.tool = 'focus';
+		viewer.render(20);
+		viewer.handleInput('\r');
+
+		expect(viewer.render(20).join('\n'))
+			.toContain('focus');
+
+		viewer.handleInput('G');
+
+		expect(viewer.render(20).join('\n'))
+			.toContain('match three');
+	}
+);
+
+test
+(
+	'preserves the complete outcome when a wide target crosses the label boundary',
+	() => {
+		const { viewer, history } = fixture(10);
+		history.calls[2]!.args = { path: '目目目' };
+		const row = viewer.render(20).find(line => line.includes('目'));
+
+		expect(row)
+			.toContain('Done');
+	}
+);
+
+test
+(
+	'preserves failed tool identity before exit metadata in a 20-column terminal',
+	() => {
+		const { viewer, history } = fixture(10);
+		history.calls[2]!.tool = 'bash';
+		history.calls[2]!.args = { command: 'npm test' };
+		history.finish('last', { details: { exitCode: 137 } }, true, 1200);
+
+		const narrow = viewer.render(20).find(line => line.includes('Failed'))!;
+		expectToContainAll(narrow, ['bash', 'Failed']);
+
+		expect(visibleWidth(narrow))
+			.toBeLessThanOrEqual(18);
+
+		const wide = viewer.render(80).find(line => line.includes('bash'))!;
+		expectToContainAll(wide, ['bash', 'Failed', 'exit 137', '0.2s']);
+	}
+);
+
+test
+(
+	'reveals a searched tool name despite long failure metadata at narrow widths',
+	() => {
+		const { viewer, history } = fixture(10);
+		history.calls[2]!.tool = 'bash';
+		history.calls[2]!.args = { command: 'npm test' };
+		history.finish('last', { details: { exitCode: 137 } }, true, 1200);
+		viewer.handleInput('g');
+		viewer.render(20);
+		viewer.handleInput('/');
+		viewer.handleInput('bash');
+		viewer.handleInput('\r');
+
+		expect(viewer.render(20).join('\n'))
+			.toContain('[bash]');
+	}
+);
 
 test
 (
@@ -574,7 +806,7 @@ test
 
 		const lines = viewer.render(60);
 
-		expect(lines.find(line => line.startsWith('› ')))
+		expect(lines.join('\n'))
 			.toContain('[needle]');
 
 		expect(lines.join('\n'))

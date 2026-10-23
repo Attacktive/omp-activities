@@ -15,8 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Session timing persistence stored under `dev.attacktive.activity.timing`.
 - Support for resetting visible history on `/clear` using native session boundaries.
 
+### Changed
+
+- Present activity history as compact chronological rows with outcomes, elapsed time, and optional inline details instead of a separate detail screen.
+- Style live Activity with native theme roles, tree connectors, aligned runtime metadata, and a width-aware command hint.
+
 ### Fixed
 
+- Preserve history tool identity and tool-name search matches when exit metadata would otherwise consume narrow rows.
 - Use a fullscreen history viewer instead of exposing conversation rows above it.
 - Keep navigation hints visible in narrow terminals.
 - Preserve retained calls when retry rewinds a branch after `/clear`.
