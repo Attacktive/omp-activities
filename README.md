@@ -50,11 +50,12 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 ### History viewer
 
 - `/activities` or **Ctrl+Alt+A** opens history focused on the newest call.
+- Calls remain in chronological order with a compact tool/target row, outcome, and elapsed time when width permits.
 - **Up/Down** and **Page Up/Page Down** move selection between calls.
 - **Home** or **g** jumps to the first call; **End** or **G** jumps to the last call.
-- **Enter** opens full arguments, structured exit codes, and output or metadata for the selected call.
-- The same navigation keys (**Up/Down**, **Page Up/Page Down**, **Home/g**, **End/G**) scroll wrapped detail content.
-- **q** or **Escape** returns from details back to the list, and closes the viewer from the list view.
+- **Enter** expands full arguments, structured exit codes, and output or metadata directly beneath the selected call, retaining neighboring calls when space permits.
+- The same navigation keys (**Up/Down**, **Page Up/Page Down**, **Home/g**, **End/G**) scroll wrapped content while a call is expanded.
+- **Enter**, **q**, or **Escape** collapses the expanded call; **q** or **Escape** closes the viewer when calls are collapsed.
 - **Ctrl+C** backs out without canceling active foreground tools.
 
 ### Search
@@ -66,7 +67,7 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 - Searches stop at boundaries without wrapping around.
 - In the list view, search moves between matching rows by tool name, target, and status without hiding non-matching rows.
 - Long targets scroll horizontally when selected to reveal matches beyond normal line truncation.
-- In the details view, search scans and highlights wrapped argument and output lines within the call.
+- Within an expanded call, search scans and highlights wrapped argument and output lines.
 - Search input uses standard single-line editing controls; **q** remains literal text while typing a pattern.
 - **Escape** or **Ctrl+C** cancels search input without leaving the viewer.
 
@@ -77,8 +78,9 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 
 ### Live activity widget
 
-- An editor widget displays up to three active activity rows and an overflow counter.
-- Ordinary calls show elapsed runtime.
+- A themed Activity heading and tree-style rows display up to three active activities and an overflow counter.
+- Ordinary calls show right-aligned elapsed runtime, with long targets truncated before runtime metadata.
+- A dim `/activities` hint appears in the heading when space permits and is omitted in narrow terminals.
 - Task calls display reported subagent names, active tool names and targets (or current intent when no target is available), and states.
 - Active subagents take precedence over completed siblings.
 - Terminal states remain visible until the parent task settles.

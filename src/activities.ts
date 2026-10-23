@@ -1,4 +1,4 @@
-import { matchesKey, truncateToWidth } from '@oh-my-pi/pi-tui';
+import { matchesKey } from '@oh-my-pi/pi-tui';
 import type { TUI } from '@oh-my-pi/pi-tui';
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent';
 import { ActivityHistory, TIMING_ENTRY, timingFor } from './history';
@@ -79,12 +79,12 @@ function activity(pi: ExtensionAPI) {
 			context.ui.setWidget
 			(
 				WIDGET_KEY,
-				tui => {
+				(tui, theme) => {
 					widgetTui = tui;
 
 					return {
 						render(width: number) {
-							return (liveWidget(history.calls, Date.now()) ?? []).map(line => truncateToWidth(line, width));
+							return liveWidget(history.calls, Date.now(), width, theme) ?? [];
 						}
 					};
 				}
