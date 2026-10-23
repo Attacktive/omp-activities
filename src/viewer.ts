@@ -328,14 +328,26 @@ class ActivityViewer implements Component {
 	#callLine(call: ActivityCall, width: number, now: number, selected: boolean) {
 		const labelText = rowLabel(call);
 		const source = rowText(call);
-		let status = stateText(call, this.#theme, this.#highlight(rowStatus(call), source, labelText.length + 2));
+		const toolWidth = visibleWidth(cleanText(call.tool));
+		const metadataWidth = Math.max(0, width - toolWidth - 3);
+		let statusLabel = rowStatus(call);
+		if (visibleWidth(statusLabel) > metadataWidth) {
+			statusLabel = STATE_LABELS[call.state];
+		}
+
+		let status = stateText(call, this.#theme, this.#highlight(statusLabel, source, labelText.length + 2));
 		if (selected) {
 			status = this.#theme.bold(status);
 		}
 
 		if (width >= 40) {
-			status += this.#theme.fg('dim', `  ${elapsed(call, now)}`);
+			const duration = `  ${elapsed(call, now)}`;
+			if (visibleWidth(status) + visibleWidth(duration) <= metadataWidth) {
+				status += this.#theme.fg('dim', duration);
+			}
 		}
+
+		status = truncateToWidth(status, metadataWidth);
 
 		let marker = '▸ ';
 		if (selected && this.#details) {
@@ -357,9 +369,6 @@ class ActivityViewer implements Component {
 		const visibleLabel = sliceWithWidth(labelText.slice(start), 0, available, true).text;
 		const label = `${prefix}${this.#highlight(visibleLabel, source, start)}`;
 		let row = `${label}${' '.repeat(Math.max(1, width - visibleWidth(label) - visibleWidth(status)))}${status}`;
-		if (available === 0) {
-			row = truncateToWidth(status, width);
-		}
 
 		if (selected) {
 			row = this.#theme.bg('selectedBg', row);

@@ -431,6 +431,45 @@ test
 
 test
 (
+	'preserves failed tool identity before exit metadata in a 20-column terminal',
+	() => {
+		const { viewer, history } = fixture(10);
+		history.calls[2]!.tool = 'bash';
+		history.calls[2]!.args = { command: 'npm test' };
+		history.finish('last', { details: { exitCode: 137 } }, true, 1200);
+
+		const narrow = viewer.render(20).find(line => line.includes('Failed'))!;
+		expectToContainAll(narrow, ['bash', 'Failed']);
+
+		expect(visibleWidth(narrow))
+			.toBeLessThanOrEqual(18);
+
+		const wide = viewer.render(80).find(line => line.includes('bash'))!;
+		expectToContainAll(wide, ['bash', 'Failed', 'exit 137', '0.2s']);
+	}
+);
+
+test
+(
+	'reveals a searched tool name despite long failure metadata at narrow widths',
+	() => {
+		const { viewer, history } = fixture(10);
+		history.calls[2]!.tool = 'bash';
+		history.calls[2]!.args = { command: 'npm test' };
+		history.finish('last', { details: { exitCode: 137 } }, true, 1200);
+		viewer.handleInput('g');
+		viewer.render(20);
+		viewer.handleInput('/');
+		viewer.handleInput('bash');
+		viewer.handleInput('\r');
+
+		expect(viewer.render(20).join('\n'))
+			.toContain('[bash]');
+	}
+);
+
+test
+(
 	'navigates to first and last calls with both key pairs',
 	() => {
 		const { viewer, screen } = fixture();

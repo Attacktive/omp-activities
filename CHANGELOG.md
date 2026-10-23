@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Preserve history tool identity and tool-name search matches when exit metadata would otherwise consume narrow rows.
 - Use a fullscreen history viewer instead of exposing conversation rows above it.
 - Keep navigation hints visible in narrow terminals.
 - Preserve retained calls when retry rewinds a branch after `/clear`.

@@ -51,6 +51,7 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 
 - `/activities` or **Ctrl+Alt+A** opens history focused on the newest call.
 - Calls remain in chronological order with a compact tool/target row, outcome, and elapsed time when width permits.
+- Tool identity takes priority over secondary exit outcomes and elapsed time in narrow rows, with full exit outcomes available in expanded details.
 - **Up/Down** and **Page Up/Page Down** move selection between calls.
 - **Home** or **g** jumps to the first call; **End** or **G** jumps to the last call.
 - **Enter** expands full arguments, structured exit codes, and output or metadata directly beneath the selected call, retaining neighboring calls when space permits.
