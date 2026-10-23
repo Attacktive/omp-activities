@@ -21,3 +21,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Keep navigation hints visible in narrow terminals.
 - Preserve retained calls when retry rewinds a branch after `/clear`.
 - Keep task batches active until all children settle and retain their completion output.
+- Reattach live task batches after branch navigation using persisted child-job identities and retain settled sibling states.
+- Retire consumed job associations and non-async batch members without dropping pending background deliveries.

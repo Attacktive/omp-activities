@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { ActivityHistory, cleanText, describeTarget, detailText } from './history';
+import { ActivityHistory, cleanText, describeTarget, detailText, timingFor } from './history';
 
 test
 (
@@ -331,5 +331,201 @@ test
 
 		expect([call.state, call.endedAt])
 			.toEqual(['canceled', 300]);
+	}
+);
+
+test
+(
+	'reattaches a two-agent batch after navigating away and back and retains its completions',
+	() => {
+		const history = new ActivityHistory();
+		const call = history.start('batch', 'task', {}, 100);
+		const details = { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] };
+		history.finish('batch', { details }, false, 150);
+
+		const running = [{ id: 'One', status: 'running', startTime: 110 }, { id: 'Two', status: 'running', startTime: 120 }];
+		history.syncJobs({ running, recent: [] });
+
+		const entries = [
+			{ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'batch', name: 'task', arguments: {} }] } },
+			{ type: 'message', message: { role: 'toolResult', toolCallId: 'batch', details } },
+			{ type: 'custom', customType: 'dev.attacktive.activity.timing', data: JSON.parse(JSON.stringify(timingFor(call))) }
+		];
+
+		history.restore([]);
+		history.restore(entries);
+		history.syncJobs({ running, recent: [] });
+
+		expect(history.calls[0]!.state)
+			.toBe('background');
+
+		history.syncJobs({ running: [running[1]], recent: [{ id: 'One', status: 'completed', startTime: 110, endTime: 300 }] });
+		history.deliver({ customType: 'async-result', content: 'first restored output', details: { jobs: [{ jobId: 'One', status: 'completed' }] } });
+
+		expect(history.calls[0]!.state)
+			.toBe('background');
+
+		history.syncJobs({ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 900 }] });
+		history.deliver({ customType: 'async-result', content: 'second restored output', details: { jobs: [{ jobId: 'Two', status: 'completed' }] } });
+
+		expect([history.calls[0]!.state, history.calls[0]!.endedAt])
+			.toEqual(['done', 900]);
+
+		expect(detailText(history.calls[0]!))
+			.toContain('first restored output');
+
+		expect(detailText(history.calls[0]!))
+			.toContain('second restored output');
+
+		history.restore(entries);
+		history.syncJobs({ running: [{ id: 'One', status: 'running', startTime: 1010 }, { id: 'Two', status: 'running', startTime: 1020 }], recent: [] });
+		history.deliver({ customType: 'async-result', content: 'unrelated new output', details: { jobs: [{ jobId: 'One', status: 'completed' }, { jobId: 'Two', status: 'completed' }] } });
+
+		expect([history.calls[0]!.state, history.calls[0]!.delivery])
+			.toEqual(['interrupted', undefined]);
+	}
+);
+
+test
+(
+	'retires wait-consumed completions without discarding another pending delivery',
+	() => {
+		const history = new ActivityHistory();
+		const consumed = history.start('consumed', 'bash', {}, 100);
+		const pending = history.start('pending', 'bash', {}, 100);
+		history.finish('consumed', { details: { async: { state: 'running', jobId: 'bg_1' } } }, false, 150);
+		history.finish('pending', { details: { async: { state: 'running', jobId: 'bg_2' } } }, false, 150);
+		history.syncJobs
+		(
+			{
+				running: [],
+				recent: [{ id: 'bg_1', status: 'completed', startTime: 110, endTime: 300 }, { id: 'bg_2', status: 'failed', startTime: 120, endTime: 400 }],
+				delivery: { pendingJobIds: ['bg_2'] }
+			}
+		);
+
+		history.syncJobs(null);
+		history.deliver({ customType: 'async-result', content: 'unrelated reused job', details: { jobs: [{ jobId: 'bg_1', status: 'failed' }] } });
+		history.deliver({ customType: 'async-result', content: 'pending failure output', details: { jobs: [{ jobId: 'bg_2', status: 'failed' }] } });
+
+		expect([consumed.state, consumed.endedAt, consumed.delivery])
+			.toEqual(['done', 300, undefined]);
+
+		expect([pending.state, pending.endedAt])
+			.toEqual(['failed', 400]);
+
+		expect(detailText(pending))
+			.toContain('pending failure output');
+	}
+);
+
+test
+(
+	'retires consumed batch children while retaining their terminal state until the last child settles',
+	() => {
+		const history = new ActivityHistory();
+		const call = history.start('batch', 'task', {}, 100);
+		history.finish('batch', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] } }, false, 150);
+		history.syncJobs
+		(
+			{
+				running: [{ id: 'Two', status: 'running', startTime: 120 }],
+				recent: [{ id: 'One', status: 'failed', startTime: 110, endTime: 300 }],
+				delivery: { pendingJobIds: [] }
+			}
+		);
+
+		history.deliver({ customType: 'async-result', content: 'unrelated first child', details: { jobs: [{ jobId: 'One', status: 'completed' }] } });
+
+		expect([call.state, call.delivery])
+			.toEqual(['background', undefined]);
+
+		history.syncJobs({ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 500 }], delivery: { pendingJobIds: [] } });
+		history.deliver({ customType: 'async-result', content: 'unrelated second child', details: { jobs: [{ jobId: 'Two', status: 'completed' }] } });
+
+		expect([call.state, call.endedAt, call.delivery])
+			.toEqual(['failed', 500, undefined]);
+	}
+);
+
+test
+(
+	'retires non-async mixed batch members and settles tracking even when recent rows are empty',
+	() => {
+		const history = new ActivityHistory();
+		const call = history.start('mixed', 'task', {}, 100);
+		history.finish('mixed', { details: { async: { type: 'task', state: 'completed', jobId: 'Async' }, progress: [{ id: 'Async', status: 'completed' }, { id: 'Blocking', status: 'completed' }] } }, false, 500);
+		history.syncJobs({ running: [], recent: [], delivery: { pendingJobIds: ['Async'] } });
+		history.deliver({ customType: 'async-result', content: 'unrelated blocking name', details: { jobs: [{ jobId: 'Blocking', status: 'completed' }] } });
+
+		expect(call.delivery)
+			.toBeUndefined();
+
+		history.deliver({ customType: 'async-result', content: 'retained async output', details: { jobs: [{ jobId: 'Async', status: 'completed' }] } });
+
+		expect(detailText(call))
+			.toContain('retained async output');
+
+		expect([call.state, call.endedAt])
+			.toEqual(['done', 500]);
+	}
+);
+
+test
+(
+	'retains the last child when aggregate completion precedes host job settlement',
+	() => {
+		const history = new ActivityHistory();
+		const call = history.start('batch', 'task', {}, 100);
+		history.finish('batch', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] } }, false, 150);
+		history.update('batch', { details: { async: { type: 'task', state: 'completed', jobId: 'One' }, progress: [{ id: 'One', status: 'completed' }, { id: 'Two', status: 'completed' }] } }, 500);
+		history.syncJobs
+		(
+			{
+				running: [{ id: 'Two', status: 'running', startTime: 120 }],
+				recent: [{ id: 'One', status: 'completed', startTime: 110, endTime: 300 }],
+				delivery: { pendingJobIds: [] }
+			}
+		);
+
+		history.syncJobs({ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 510 }], delivery: { pendingJobIds: ['Two'] } });
+		history.deliver({ customType: 'async-result', content: 'last child output', details: { jobs: [{ jobId: 'Two', status: 'completed' }] } });
+
+		expect(detailText(call))
+			.toContain('last child output');
+
+		expect(call.state)
+			.toBe('done');
+	}
+);
+
+test
+(
+	'does not retire a new call when an older batch child job ID is reused',
+	() => {
+		const history = new ActivityHistory();
+		const batch = history.start('batch', 'task', {}, 100);
+		history.finish('batch', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] } }, false, 150);
+		history.syncJobs({ running: [{ id: 'One', status: 'running', startTime: 110 }, { id: 'Two', status: 'running', startTime: 120 }] });
+		history.syncJobs({ running: [{ id: 'Two', status: 'running', startTime: 120 }], recent: [{ id: 'One', status: 'completed', startTime: 110, endTime: 300 }] });
+		history.deliver({ customType: 'async-result', content: 'old first child output', details: { jobs: [{ jobId: 'One', status: 'completed' }] } });
+
+		const newer = history.start('newer', 'bash', {}, 1000);
+		history.finish('newer', { details: { async: { state: 'running', jobId: 'One' } } }, false, 1050);
+		history.syncJobs({ running: [{ id: 'One', status: 'running', startTime: 1010 }, { id: 'Two', status: 'running', startTime: 120 }], delivery: { pendingJobIds: [] } });
+		history.syncJobs({ running: [{ id: 'Two', status: 'running', startTime: 120 }], recent: [{ id: 'One', status: 'completed', startTime: 1010, endTime: 1500 }], delivery: { pendingJobIds: ['One'] } });
+		history.deliver({ customType: 'async-result', content: 'new job output', details: { jobs: [{ jobId: 'One', status: 'completed' }] } });
+
+		expect([newer.state, newer.endedAt])
+			.toEqual(['done', 1500]);
+
+		expect(detailText(newer))
+			.toContain('new job output');
+
+		expect(detailText(batch))
+			.not.toContain('new job output');
+
+		expect(batch.state)
+			.toBe('background');
 	}
 );

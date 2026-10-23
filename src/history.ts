@@ -1,5 +1,11 @@
 type ActivityState = 'running' | 'background' | 'done' | 'failed' | 'canceled' | 'interrupted';
 
+interface ActivityJobTiming {
+	startedAt: number;
+	endedAt?: number;
+	status: string;
+}
+
 interface ActivityCall {
 	id: string;
 	tool: string;
@@ -10,6 +16,7 @@ interface ActivityCall {
 	startedAt?: number;
 	endedAt?: number;
 	jobStartedAt?: number;
+	jobTimings?: Record<string, ActivityJobTiming>;
 }
 
 interface ActivityTiming {
@@ -18,6 +25,7 @@ interface ActivityTiming {
 	endedAt?: number;
 	jobStartedAt?: number;
 	state: ActivityState;
+	jobTimings?: Record<string, ActivityJobTiming>;
 }
 
 const TIMING_ENTRY = 'dev.attacktive.activity.timing';
@@ -222,24 +230,93 @@ class ActivityHistory {
 		return canceled;
 	}
 
-	/** Queued cancellations may settle without another aggregate progress event. */
+	#retireJob(jobId: string) {
+		const call = this.#jobs.get(jobId);
+		if (!call) {
+			return;
+		}
+
+		this.#jobs.delete(jobId);
+		for (const tracked of this.#jobs.values()) {
+			if (tracked === call) {
+				return;
+			}
+		}
+
+		this.#liveJobs.delete(call);
+	}
+
+	/** Missing delivery metadata is not evidence that a completion was consumed. */
+	#retireSettledJobs(snapshot: Record<string, unknown>, jobs: ReadonlyMap<unknown, Record<string, unknown>>) {
+		const pendingJobIds = record(snapshot.delivery).pendingJobIds;
+		if (!Array.isArray(pendingJobIds)) {
+			return;
+		}
+
+		const pending = new Set(pendingJobIds);
+		for (const [id, call] of this.#jobs) {
+			if (pending.has(id)) {
+				continue;
+			}
+
+			const job = jobs.get(id);
+			if (job?.status === 'running') {
+				continue;
+			}
+
+			const timing = call.jobTimings?.[id];
+			const terminal = call.state !== 'background' && call.state !== 'running' && call.state !== 'interrupted';
+			const settledChild = timing && timing.status !== 'running' && timing.status !== 'pending';
+			if (terminal || settledChild || (job && job.status !== 'running' && job.startTime === call.jobStartedAt)) {
+				this.#retireJob(id);
+			}
+		}
+	}
+
+	/** Reconciles each child independently so restored batches retain execution identity and settled siblings. */
 	#settleBatch(call: ActivityCall, jobs: ReadonlyMap<unknown, Record<string, unknown>>) {
-		if (call.state !== 'background' || !this.#liveJobs.has(call)) {
+		if (call.state !== 'background' && call.state !== 'interrupted') {
 			return false;
 		}
 
 		const progress = record(record(call.result).details).progress as unknown[];
 		let state: ActivityState = 'done';
 		let endedAt = call.endedAt;
+		let running = false;
+		let attached = this.#liveJobs.has(call);
+		let changed = false;
 		for (const raw of progress) {
 			const agent = record(raw);
-			let status = agent.status;
-			const job = jobs.get(agent.id);
-			if (job && typeof job.startTime === 'number' && call.startedAt !== undefined && job.startTime >= call.startedAt) {
-				status = job.status;
-				if (typeof job.endTime === 'number') {
-					endedAt = Math.max(endedAt ?? 0, job.endTime);
+			const id = agent.id;
+			if (typeof id !== 'string') {
+				continue;
+			}
+
+			let timing = call.jobTimings?.[id];
+			const job = jobs.get(id);
+			if (job && typeof job.startTime === 'number' && typeof job.status === 'string') {
+				const sameRun = timing?.startedAt === job.startTime || (timing === undefined && this.#liveJobs.has(call));
+				if (sameRun && call.startedAt !== undefined && job.startTime >= call.startedAt) {
+					attached = true;
+					const endTime = job.endTime;
+					if (!timing || timing.status !== job.status || timing.endedAt !== endTime) {
+						timing = { startedAt: job.startTime, status: job.status };
+						if (typeof endTime === 'number') {
+							timing.endedAt = endTime;
+						}
+
+						call.jobTimings ??= Object.create(null) as Record<string, ActivityJobTiming>;
+						call.jobTimings[id] = timing;
+						changed = true;
+					}
+				} else if (this.#jobs.get(id) === call) {
+					this.#retireJob(id);
 				}
+			}
+
+			const status = timing?.status ?? agent.status;
+			if (timing?.endedAt !== undefined) {
+				endedAt = Math.max(endedAt ?? 0, timing.endedAt);
 			}
 
 			if (status === 'failed') {
@@ -249,14 +326,25 @@ class ActivityHistory {
 					state = 'canceled';
 				}
 			} else if (status !== 'completed') {
-				return false;
+				running = true;
 			}
 		}
 
+		if (!attached) {
+			return false;
+		}
+
+		this.#liveJobs.add(call);
+		if (running) {
+			state = 'background';
+			endedAt = undefined;
+		}
+
+		changed ||= call.state !== state || call.endedAt !== endedAt;
 		call.state = state;
 		call.endedAt = endedAt;
 
-		return true;
+		return changed;
 	}
 
 	/** Uses the host's read-only job snapshot, not tool polling or model turns. */
@@ -272,17 +360,16 @@ class ActivityHistory {
 			rows.push(...jobs.recent);
 		}
 
-		if (!rows.length) {
-			return [];
-		}
-
 		const byId = new Map(rows.map(job => [record(job).id, record(job)]));
 		const changed: ActivityCall[] = [];
+		const batches = new Set<ActivityCall>();
 		for (const [jobId, call] of this.#jobs) {
 			if (isTaskBatch(call)) {
-				if (this.#settleBatch(call, byId)) {
+				if (!batches.has(call) && this.#settleBatch(call, byId)) {
 					changed.push(call);
 				}
+
+				batches.add(call);
 
 				continue;
 			}
@@ -311,6 +398,8 @@ class ActivityHistory {
 				changed.push(call);
 			}
 		}
+
+		this.#retireSettledJobs(jobs, byId);
 
 		return changed;
 	}
@@ -358,19 +447,7 @@ class ActivityHistory {
 					call.state = resultState({ details: { async: { state: info.status } } }, false);
 				}
 
-				this.#jobs.delete(info.jobId);
-
-				let hasRemainingJobs = false;
-				for (const tracked of this.#jobs.values()) {
-					if (tracked === call) {
-						hasRemainingJobs = true;
-						break;
-					}
-				}
-
-				if (!hasRemainingJobs) {
-					this.#liveJobs.delete(call);
-				}
+				this.#retireJob(info.jobId);
 			}
 		}
 	}
@@ -438,6 +515,22 @@ class ActivityHistory {
 
 				if (typeof timing.jobStartedAt === 'number' && Number.isFinite(timing.jobStartedAt)) {
 					call.jobStartedAt = timing.jobStartedAt;
+				}
+
+				const jobTimings = record(timing.jobTimings);
+				for (const [id, raw] of Object.entries(jobTimings)) {
+					const job = record(raw);
+					if (typeof job.startedAt !== 'number' || !Number.isFinite(job.startedAt) || typeof job.status !== 'string') {
+						continue;
+					}
+
+					const restored: ActivityJobTiming = { startedAt: job.startedAt, status: job.status };
+					if (typeof job.endedAt === 'number' && Number.isFinite(job.endedAt)) {
+						restored.endedAt = job.endedAt;
+					}
+
+					call.jobTimings ??= Object.create(null) as Record<string, ActivityJobTiming>;
+					call.jobTimings[id] = restored;
 				}
 
 				if (timing.state === 'canceled' || (call.endedAt !== undefined && (timing.state === 'done' || timing.state === 'failed'))) {
@@ -530,7 +623,7 @@ function detailText(call: ActivityCall) {
 }
 
 function timingFor(call: ActivityCall) {
-	return { id: call.id, startedAt: call.startedAt, endedAt: call.endedAt, jobStartedAt: call.jobStartedAt, state: call.state };
+	return { id: call.id, startedAt: call.startedAt, endedAt: call.endedAt, jobStartedAt: call.jobStartedAt, jobTimings: call.jobTimings, state: call.state };
 }
 
 export { ActivityHistory, TIMING_ENTRY, cleanText, describeTarget, detailText, elapsed, outcome, record, timingFor };
