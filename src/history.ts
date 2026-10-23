@@ -31,20 +31,23 @@ function record(value: unknown) {
 }
 
 /** Removes untrusted terminal controls while preserving output line structure. */
+
 /* eslint-disable no-control-regex -- deliberate terminal control character and escape sequence stripping */
 function cleanText(value: string) {
 	return value
-		.replace(/(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c)/g, '')
+		.replace(/(?:\x1b]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c)/g, '')
 		.replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]/g, '')
 		.replace(/\x1b[ -/]*[@-~]/g, '')
 		.replace(/\r/g, ' ')
 		.replace(/\t/g, '    ')
 		.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 }
+
 /* eslint-enable no-control-regex */
 
 function describeTarget(args: unknown) {
 	const input = record(args);
+
 	for (const key of ['path', 'file', 'command', 'query', 'pattern', 'url', 'input', 'i']) {
 		if (typeof input[key] === 'string' && input[key]) {
 			return cleanText(input[key]).replace(/\s+/g, ' ').trim();
@@ -101,6 +104,7 @@ function elapsed(call: ActivityCall, now: number) {
 
 function isTaskBatch(call: ActivityCall) {
 	const details = record(record(call.result).details);
+
 	return call.tool === 'task' && record(details.async).type === 'task' && Array.isArray(details.progress) && details.progress.length > 1;
 }
 
@@ -141,6 +145,7 @@ class ActivityHistory {
 		}
 
 		call.result = result;
+
 		if (isTaskBatch(call) && (call.state === 'background' || call.state === 'interrupted')) {
 			const state = resultState(result, false);
 			if (state !== call.state) {
@@ -163,6 +168,7 @@ class ActivityHistory {
 		call.result = result;
 		call.state = resultState(result, isError);
 		const job = record(record(record(result).details).async);
+
 		if (typeof job.jobId === 'string') {
 			this.#jobs.set(job.jobId, call);
 			if (call.state === 'background') {
@@ -189,6 +195,7 @@ class ActivityHistory {
 
 	cancelRunning(now: number) {
 		const canceled: ActivityCall[] = [];
+
 		for (const call of this.calls) {
 			if (call.state === 'running') {
 				call.state = 'canceled';
@@ -202,6 +209,7 @@ class ActivityHistory {
 
 	cancelCalls(ids: ReadonlySet<string>, now: number) {
 		const canceled: ActivityCall[] = [];
+
 		for (const id of ids) {
 			const call = this.#byId.get(id);
 			if (call && (call.state === 'running' || call.state === 'failed')) {
@@ -247,6 +255,7 @@ class ActivityHistory {
 
 		call.state = state;
 		call.endedAt = endedAt;
+
 		return true;
 	}
 
@@ -254,6 +263,7 @@ class ActivityHistory {
 	syncJobs(snapshot: unknown) {
 		const jobs = record(snapshot);
 		const rows: unknown[] = [];
+
 		if (Array.isArray(jobs.running)) {
 			rows.push(...jobs.running);
 		}
@@ -349,6 +359,7 @@ class ActivityHistory {
 				}
 
 				this.#jobs.delete(info.jobId);
+
 				let hasRemainingJobs = false;
 				for (const tracked of this.#jobs.values()) {
 					if (tracked === call) {
@@ -370,8 +381,10 @@ class ActivityHistory {
 		this.#byId.clear();
 		this.#jobs.clear();
 		this.#liveJobs.clear();
+
 		const timings = new Map<string, ActivityTiming>();
 		const boundary = entries.findLastIndex(raw => record(raw).type === 'reset_boundary');
+
 		for (let index = boundary + 1; index < entries.length; index++) {
 			const raw = entries[index];
 			const entry = record(raw);
@@ -448,6 +461,7 @@ class ActivityHistory {
 
 function safeJson(value: unknown) {
 	const seen = new WeakSet<object>();
+
 	const serialized = JSON.stringify
 	(
 		value,
@@ -462,6 +476,7 @@ function safeJson(value: unknown) {
 				}
 
 				seen.add(item);
+
 				const image = record(item);
 				if (typeof image.data === 'string' && (image.type === 'image' || (typeof image.mimeType === 'string' && image.mimeType.startsWith('image/')))) {
 					return { ...image, data: `[${image.data.length} encoded image characters]` };
@@ -479,6 +494,7 @@ function safeJson(value: unknown) {
 function resultText(result: unknown) {
 	const frame = record(result);
 	const sections: string[] = [];
+
 	if (typeof frame.content === 'string') {
 		sections.push(frame.content);
 	} else if (Array.isArray(frame.content)) {

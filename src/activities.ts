@@ -36,6 +36,7 @@ function activity(pi: ExtensionAPI) {
 		const manager = ctx.sessionManager;
 		const leaf = manager.getLeafId();
 		let entry = manager.getLeafEntry();
+
 		while (entry && entry.id !== observedLeaf) {
 			if (entry.type === 'reset_boundary') {
 				if (entry.id === observedReset) {
@@ -80,6 +81,7 @@ function activity(pi: ExtensionAPI) {
 				WIDGET_KEY,
 				tui => {
 					widgetTui = tui;
+
 					return {
 						render(width: number) {
 							return (liveWidget(history.calls, Date.now()) ?? []).map(line => truncateToWidth(line, width));
@@ -87,6 +89,7 @@ function activity(pi: ExtensionAPI) {
 					};
 				}
 			);
+
 			widgetMounted = true;
 		} else if (!live && widgetMounted) {
 			context.ui.setWidget(WIDGET_KEY, undefined);
@@ -115,6 +118,7 @@ function activity(pi: ExtensionAPI) {
 		widgetMounted = false;
 		widgetTui = undefined;
 		context = ctx;
+
 		if (ctx.agent.kind !== 'main') {
 			return;
 		}
@@ -123,6 +127,7 @@ function activity(pi: ExtensionAPI) {
 		history.restore(branch);
 		observedReset = branch.findLast(entry => entry.type === 'reset_boundary')?.id ?? null;
 		observedLeaf = ctx.sessionManager.getLeafId();
+
 		if (ctx.mode === 'tui') {
 			removeInputListener = ctx.ui.onTerminalInput
 			(
@@ -156,6 +161,7 @@ function activity(pi: ExtensionAPI) {
 
 		context = ctx;
 		refresh();
+
 		try {
 			await ctx.ui.custom<void>
 			(
@@ -163,6 +169,7 @@ function activity(pi: ExtensionAPI) {
 					viewerTui = tui;
 					viewer = new ActivityViewer(history, tui, theme, () => done(undefined));
 					refresh();
+
 					return viewer;
 				},
 				{ overlay: true, overlayOptions: { width: '100%', maxHeight: '100%', margin: 0, fullscreen: true, mouseTracking: false } }
@@ -175,12 +182,15 @@ function activity(pi: ExtensionAPI) {
 	}
 
 	pi.setLabel('Activity history');
+
 	pi.registerCommand('activities', { description: 'Browse compact tool history and full call details', handler: async (_args, ctx) => open(ctx) });
 	pi.registerShortcut('ctrl+alt+a', { description: 'Open tool history', handler: open });
+
 	pi.on('session_start', restore);
 	pi.on('session_switch', restore);
 	pi.on('session_branch', restore);
 	pi.on('session_tree', restore);
+
 	pi.on
 	(
 		'agent_start',
@@ -194,6 +204,7 @@ function activity(pi: ExtensionAPI) {
 			interruptCandidates.clear();
 		}
 	);
+
 	pi.on
 	(
 		'tool_execution_start',
@@ -208,6 +219,7 @@ function activity(pi: ExtensionAPI) {
 			refresh();
 		}
 	);
+
 	pi.on
 	(
 		'tool_execution_update',
@@ -224,6 +236,7 @@ function activity(pi: ExtensionAPI) {
 			refresh();
 		}
 	);
+
 	pi.on
 	(
 		'tool_execution_end',
@@ -241,6 +254,7 @@ function activity(pi: ExtensionAPI) {
 			refresh();
 		}
 	);
+
 	pi.on
 	(
 		'message_end',
@@ -269,6 +283,7 @@ function activity(pi: ExtensionAPI) {
 			refresh();
 		}
 	);
+
 	pi.on
 	(
 		'agent_end',
@@ -284,6 +299,7 @@ function activity(pi: ExtensionAPI) {
 			refresh();
 		}
 	);
+
 	pi.on
 	(
 		'session_shutdown',

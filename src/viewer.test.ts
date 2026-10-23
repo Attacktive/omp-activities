@@ -18,13 +18,16 @@ interface FixtureCommand {
 
 type ViewerFactory = (tui: unknown, theme: unknown, keys: unknown, done: () => void) => InstanceType<typeof ActivityViewer>;
 
-test(
+test
+(
 	'constrains narrow footer and fullscreen height bounds in a 20x10 terminal',
 	() => {
 		const { viewer } = fixture(10);
 		const listLines = viewer.render(20);
+
 		expect(listLines.length)
 			.toBe(10);
+
 		for (const line of listLines) {
 			expect(visibleWidth(line))
 				.toBeLessThanOrEqual(18);
@@ -35,8 +38,10 @@ test(
 
 		viewer.handleInput('\r');
 		const detailLines = viewer.render(20);
+
 		expect(detailLines.length)
 			.toBe(10);
+
 		for (const line of detailLines) {
 			expect(visibleWidth(line))
 				.toBeLessThanOrEqual(18);
@@ -47,79 +52,112 @@ test(
 	}
 );
 
-test(
+test
+(
 	'keeps elapsed time in the live activity widget',
 	() => {
 		const history = new ActivityHistory();
 		history.start('bash', 'bash', { command: 'sleep 1' }, 1000);
+
 		expect(liveWidget(history.calls, 1300)?.join('\n'))
 			.toContain('0.3s');
 	}
 );
 
-test(
+test
+(
 	'shows the reported subagent tool and drops it when progress moves on',
 	() => {
 		const history = new ActivityHistory();
 		history.start('task', 'task', {}, 1000);
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'running', currentTool: 'read', currentToolArgs: 'agent/STYLE.md' }] } });
+
 		expect(liveWidget(history.calls, 2000)?.join('\n'))
 			.toContain('Audit · read agent/STYLE.md');
+
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'running', recentTools: [{ tool: 'read', args: 'agent/STYLE.md' }] }] } });
+
 		expect(liveWidget(history.calls, 2100)?.join('\n'))
 			.toContain('Audit · Running');
+
 		expect(liveWidget(history.calls, 2100)?.join('\n'))
 			.not.toContain('read');
+
 		history.update('task', { details: { progress: [{ id: 'Audit', agent: 'reviewer', status: 'completed', currentTool: 'read', currentToolArgs: 'stale.ts' }] } });
+
 		expect(liveWidget(history.calls, 2200)?.join('\n'))
 			.toContain('Audit · Done');
+
 		expect(liveWidget(history.calls, 2200)?.join('\n'))
 			.not.toContain('stale.ts');
 	}
 );
 
-test(
+test
+(
 	'limits parallel agent rows globally and excludes completed siblings while others run',
 	() => {
 		const history = new ActivityHistory();
 		history.start('read', 'read', { path: 'main.ts' }, 1000);
 		history.start('task', 'task', {}, 1000);
-		history.update('task', { details: { progress: [
-			{ id: 'Old', status: 'completed', currentTool: 'read' },
-			{ id: 'One', status: 'running', currentTool: 'grep', currentToolArgs: 'needle' },
-			{ id: 'Two', status: 'pending', currentTool: 'stale' },
-			{ id: 'Three', status: 'running' },
-			{ id: 'Four', status: 'running' }
-		] } });
+		history.update
+		(
+			'task',
+			{
+				details: {
+					progress: [
+						{ id: 'Old', status: 'completed', currentTool: 'read' },
+						{ id: 'One', status: 'running', currentTool: 'grep', currentToolArgs: 'needle' },
+						{ id: 'Two', status: 'pending', currentTool: 'stale' },
+						{ id: 'Three', status: 'running' },
+						{ id: 'Four', status: 'running' }
+					]
+				}
+			});
+
 		const lines = liveWidget(history.calls, 2000)!;
+
 		expect(lines.slice(1))
 			.toEqual(['read  main.ts · 1.0s · Running', 'One · grep needle · Running', 'Two · Pending', '+2 more']);
+
 		expect(lines.join('\n'))
 			.not.toContain('Old');
 	}
 );
 
-test(
+test
+(
 	'sanitizes agent progress and uses current intent only when no target is reported',
 	() => {
 		const history = new ActivityHistory();
 		history.start('task', 'task', {}, 1000);
-		history.update('task', { details: { progress: [
-			{ id: 'Audit\x1b[2J\nNext', status: 'running', currentTool: 'bash', currentToolArgs: '\x1b]52;c;secret\x07pwd\nhere', currentToolIntent: 'ignored' },
-			{ id: 'Review', status: 'running', currentTool: 'read', currentToolIntent: 'Inspecting rules' }
-		] } });
+		history.update
+		(
+			'task',
+			{
+				details: {
+					progress: [
+						{ id: 'Audit\x1b[2J\nNext', status: 'running', currentTool: 'bash', currentToolArgs: '\x1b]52;c;secret\x07pwd\nhere', currentToolIntent: 'ignored' },
+						{ id: 'Review', status: 'running', currentTool: 'read', currentToolIntent: 'Inspecting rules' }
+					]
+				}
+			});
+
 		expect(liveWidget(history.calls, 2000)?.slice(1))
 			.toEqual(['Audit Next · bash pwd here · Running', 'Review · read Inspecting rules · Running']);
 	}
 );
 
-test(
+test
+(
 	'retains ordinary task fallback when progress is unavailable or malformed',
 	() => {
 		const history = new ActivityHistory();
 		history.start('task', 'task', { i: 'Reviewing code' }, 1000);
+
 		for (const progress of [undefined, {}, [null, { status: 'unknown' }]]) {
 			history.update('task', { details: { progress } });
+
 			expect(liveWidget(history.calls, 2000)?.slice(1))
 				.toEqual(['task  Reviewing code · 1.0s · Running']);
 		}
@@ -128,11 +166,14 @@ test(
 
 function fixture(rows = 16) {
 	const history = new ActivityHistory();
-	for (const [id, path, text] of [
+
+	const sources = [
 		['first', 'alpha.ts', 'match one'],
 		['middle', 'beta.ts', 'hidden needle\nmatch two'],
 		['last', 'gamma.ts', 'match three']
-	] as const) {
+	] as const;
+
+	for (const [id, path, text] of sources) {
 		history.start(id, 'read', { path }, 1000);
 		history.finish(id, { content: [{ type: 'text', text }] }, false, 1200);
 	}
@@ -141,24 +182,29 @@ function fixture(rows = 16) {
 	const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text, inverse: (text: string) => `[${text}]` };
 	let closed = false;
 	const viewer = new ActivityViewer(history, tui as never, theme as never, () => { closed = true; });
+
 	const screen = () => viewer.render(120).join('\n');
 	screen();
+
 	return { history, viewer, screen, isClosed: () => closed };
 }
 
-test(
+test
+(
 	'navigates to first and last calls with both key pairs',
 	() => {
 		const { viewer, screen } = fixture();
 		for (const [key, call] of [['g', 1], ['G', 3], ['\x1b[H', 1], ['\x1b[F', 3]] as const) {
 			viewer.handleInput(key);
+
 			expect(screen())
 				.toContain(`Call ${call} / 3`);
 		}
 	}
 );
 
-test(
+test
+(
 	'skips hidden-output matches and repeats only through matching rows',
 	() => {
 		const { viewer, history, screen } = fixture();
@@ -167,23 +213,32 @@ test(
 		viewer.handleInput('?');
 		viewer.handleInput('needle');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Call 1 / 3');
+
 		viewer.handleInput('N');
+
 		expect(screen())
 			.toContain('Call 3 / 3');
+
 		viewer.handleInput('n');
+
 		expect(screen())
 			.toContain('Call 1 / 3');
+
 		viewer.handleInput('n');
+
 		expect(screen())
 			.toContain('Pattern not found');
+
 		expect(screen())
 			.toContain('Call 1 / 3');
 	}
 );
 
-test(
+test
+(
 	'cancels search entry without navigating or discarding the previous pattern',
 	() => {
 		const { viewer, screen, isClosed } = fixture();
@@ -192,138 +247,180 @@ test(
 		viewer.handleInput('\r');
 		viewer.handleInput('/');
 		viewer.handleInput('gGnN');
+
 		expect(screen())
 			.toContain('Call 2 / 3');
+
 		viewer.handleInput('\x1b');
 		viewer.handleInput('n');
+
 		expect(screen())
 			.toContain('Call 1 / 3');
+
 		expect(isClosed())
 			.toBe(false);
 	}
 );
 
-test(
+test
+(
 	'keeps selection on invalid regex and permits editing and an empty-pattern repeat',
 	() => {
 		const { viewer, screen } = fixture();
 		viewer.handleInput('?');
 		viewer.handleInput('[');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Invalid pattern');
+
 		expect(screen())
 			.toContain('Call 3 / 3');
+
 		viewer.handleInput('?');
 		viewer.handleInput('readx');
 		viewer.handleInput('\x7f');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Call 2 / 3');
+
 		viewer.handleInput('?');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Call 1 / 3');
 	}
 );
 
-test(
+test
+(
 	'searches and highlights detail lines and preserves first/last navigation',
 	() => {
 		const { viewer, history, screen } = fixture(15);
 		history.update('last', { content: [{ type: 'text', text: Array.from({ length: 30 }, (_, index) => `row ${index}`).join('\n') }] });
 		viewer.handleInput('\r');
 		screen();
+
 		viewer.handleInput('/');
 		viewer.handleInput('row (12|22)');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('[row 12]');
+
 		viewer.handleInput('n');
+
 		expect(screen())
 			.toContain('[row 22]');
+
 		viewer.handleInput('N');
+
 		expect(screen())
 			.toContain('[row 12]');
+
 		viewer.handleInput('G');
+
 		expect(screen())
 			.toContain('row 29');
+
 		viewer.handleInput('g');
+
 		expect(screen())
 			.toContain('Lines 1–');
 	}
 );
 
-test(
+test
+(
 	'does not revisit bottom-page matches after detail reflow or invalidation',
 	() => {
 		const { viewer, history, screen } = fixture(24);
 		history.update('last', { content: [{ type: 'text', text: Array.from({ length: 30 }, (_, index) => `row ${index}`).join('\n') }] });
 		viewer.handleInput('\r');
 		screen();
+
 		viewer.handleInput('/');
 		viewer.handleInput('row (28|29)');
 		viewer.handleInput('\r');
 		screen();
+
 		viewer.handleInput('n');
 		screen();
+
 		viewer.invalidate();
 		viewer.render(80);
 		viewer.handleInput('n');
+
 		expect(viewer.render(80).join('\n'))
 			.toContain('Pattern not found');
+
 		viewer.handleInput('N');
 		viewer.render(80);
 		viewer.handleInput('N');
+
 		expect(viewer.render(80).join('\n'))
 			.toContain('Pattern not found');
 	}
 );
 
-test(
+test
+(
 	'reuses the logical detail match for empty-pattern repeats near the bottom',
 	() => {
 		const { viewer, history, screen } = fixture(24);
 		history.update('last', { content: [{ type: 'text', text: Array.from({ length: 30 }, (_, index) => `row ${index}`).join('\n') }] });
 		viewer.handleInput('\r');
 		screen();
+
 		viewer.handleInput('/');
 		viewer.handleInput('row (28|29)');
 		viewer.handleInput('\r');
 		screen();
+
 		viewer.handleInput('n');
 		screen();
+
 		viewer.handleInput('/');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Pattern not found');
+
 		viewer.handleInput('?');
 		viewer.handleInput('\r');
 		screen();
+
 		viewer.handleInput('?');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Pattern not found');
 	}
 );
 
-test(
+test
+(
 	'handles zero-width regex matches and empty history without looping',
 	() => {
 		const { viewer, history, screen } = fixture();
 		viewer.handleInput('?');
 		viewer.handleInput('^');
 		viewer.handleInput('\r');
+
 		expect(screen())
 			.toContain('Call 2 / 3');
+
 		history.restore([]);
 		viewer.handleInput('n');
+
 		expect(screen())
 			.toContain('No tool calls');
 	}
 );
 
-test(
+test
+(
 	'observes a native clear without session events and does not erase the first post-clear tool',
 	async () => {
 		const { default: activity } = await import('./activities');
@@ -332,9 +429,11 @@ test(
 		const entries: FixtureEntry[] = [
 			{ id: 'before', parentId: null, type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'old', name: 'read', arguments: { path: 'old.ts' } }] } }
 		];
+
 		let rendered = '';
 		const tui = { terminal: { rows: 24, columns: 120 }, requestRender: () => {} };
 		const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text };
+
 		const ctx = {
 			agent: { kind: 'main' },
 			mode: 'tui',
@@ -357,6 +456,7 @@ test(
 				}
 			}
 		};
+
 		activity({
 			setLabel: () => {},
 			on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => handlers.set(name, handler),
@@ -366,27 +466,38 @@ test(
 			registerShortcut: () => {},
 			appendEntry: () => {}
 		} as never);
+
 		await handlers.get('session_start')!({}, ctx);
 		await open!('', ctx);
+
 		expect(rendered)
 			.toContain('old.ts');
+
 		entries.push({ id: 'clear', parentId: 'before', type: 'reset_boundary' });
 		await open!('', ctx);
+
 		expect(rendered)
 			.toContain('No tool calls');
+
 		await handlers.get('tool_execution_start')!({ toolCallId: 'new', toolName: 'read', args: { path: 'new.ts' } }, ctx);
 		await open!('', ctx);
+
 		expect(rendered)
 			.toContain('new.ts');
+
 		expect(rendered)
 			.not.toContain('old.ts');
+
 		entries.push({ id: 'clear-again', parentId: 'clear', type: 'reset_boundary' });
 		await handlers.get('tool_execution_start')!({ toolCallId: 'after-second-clear', toolName: 'read', args: { path: 'after-second-clear.ts' } }, ctx);
 		await open!('', ctx);
+
 		expect(rendered)
 			.toContain('after-second-clear.ts');
+
 		expect(rendered)
 			.not.toContain('new.ts');
+
 		entries.push({ id: 'kept', parentId: 'clear-again', type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'kept-call', name: 'read', arguments: { path: 'kept.ts' } }] } });
 		await handlers.get('tool_execution_start')!({ toolCallId: 'kept-call', toolName: 'read', args: { path: 'kept.ts' } }, ctx);
 		entries.push({ id: 'kept-result', parentId: 'kept', type: 'message', message: { role: 'toolResult', toolCallId: 'kept-call', content: [], isError: false } });
@@ -397,12 +508,14 @@ test(
 		entries.pop();
 		await handlers.get('agent_start')!({}, ctx);
 		await open!('', ctx);
+
 		expect(rendered)
 			.toContain('kept.ts');
 	}
 );
 
-test(
+test
+(
 	'reveals a matching target beyond the normal row truncation',
 	() => {
 		const { viewer, history } = fixture();
@@ -411,15 +524,19 @@ test(
 		viewer.handleInput('?');
 		viewer.handleInput('needle');
 		viewer.handleInput('\r');
+
 		const lines = viewer.render(60);
+
 		expect(lines.find(line => line.startsWith('› ')))
 			.toContain('[needle]');
+
 		expect(lines.join('\n'))
 			.toContain('Call 1 / 3');
 	}
 );
 
-test(
+test
+(
 	'backs out of details before closing with q and allows q inside a search pattern',
 	() => {
 		for (const details of [false, true]) {
@@ -431,15 +548,20 @@ test(
 
 			viewer.handleInput('/');
 			viewer.handleInput('q');
+
 			expect(isClosed())
 				.toBe(false);
+
 			viewer.handleInput('\r');
 			viewer.handleInput('q');
+
 			if (details) {
 				expect(isClosed())
 					.toBe(false);
+
 				expect(screen())
 					.toContain('Call 3 / 3');
+
 				viewer.handleInput('q');
 			}
 

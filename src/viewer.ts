@@ -110,9 +110,11 @@ class ActivityViewer implements Component {
 
 			this.#cacheText = text;
 			this.#detailCache = wrapTextWithAnsi(text, width);
+
 			// Wrapped plain-text rows map back to source offsets so a search cursor survives reflow.
 			this.#detailStarts = [];
 			let sourceOffset = 0;
+
 			for (const line of this.#detailCache) {
 				const start = text.indexOf(line, sourceOffset);
 				this.#detailStarts.push(start);
@@ -216,6 +218,7 @@ class ActivityViewer implements Component {
 		input.onEscape = () => {
 			this.#searchInput = undefined;
 		};
+
 		input.onSubmit = value => {
 			if (value) {
 				try {
@@ -232,6 +235,7 @@ class ActivityViewer implements Component {
 			this.#searchInput = undefined;
 			this.#find(direction);
 		};
+
 		this.#searchStatus = '';
 		this.#searchInput = input;
 	}
@@ -331,6 +335,7 @@ class ActivityViewer implements Component {
 			...wrapTextWithAnsi(`${action} · PgUp/PgDn`, inner),
 			...wrapTextWithAnsi('Home/g Top · End/G Bottom · /? Search · n/N Repeat', inner)
 		];
+
 		const footerBudget = Math.max(1, height - 6);
 		if (help.length > footerBudget) {
 			help = wrapTextWithAnsi('↑↓ PgUp/PgDn · Home/g End/G · Enter/q/Esc · /? n/N', inner);
@@ -345,8 +350,10 @@ class ActivityViewer implements Component {
 			lines.push('No tool calls recorded on this branch.');
 		} else if (this.#details) {
 			lines.push(`${this.#highlight(cleanText(selected.tool))} · ${stateText(selected, this.#theme, this.#highlight(STATE_LABELS[selected.state]))}`);
+
 			const detailLines = this.#detailLines(inner);
 			this.#offset = Math.min(this.#offset, Math.max(0, detailLines.length - this.#pageSize));
+
 			lines.push(...detailLines.slice(this.#offset, this.#offset + this.#pageSize).map(line => this.#highlight(line)));
 			lines.push(this.#theme.fg('dim', `Lines ${this.#offset + 1}–${Math.min(this.#offset + this.#pageSize, detailLines.length)} / ${detailLines.length}`));
 		} else {
@@ -412,6 +419,7 @@ class ActivityViewer implements Component {
 		}
 
 		lines.push(...help.map(line => this.#theme.fg('dim', line)));
+
 		return lines.map(line => truncateToWidth(line, inner));
 	}
 }
