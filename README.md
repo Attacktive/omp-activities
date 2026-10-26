@@ -5,6 +5,8 @@ An unofficial [OMP](https://oh-my-pi.dev) plugin for compact tool history and li
 > [!NOTE]
 > Not built by the OMP team, and not affiliated with them in any way.
 
+![omp-activities displaying recent tool calls and a running PR check](docs/images/activities-preview.webp)
+
 ## Requirements
 
 - OMP host version `18.12.6` or later (`@oh-my-pi/pi-coding-agent` and `@oh-my-pi/pi-tui`).
