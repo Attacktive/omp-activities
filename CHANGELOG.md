@@ -6,14 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## Unreleased
 
-### Added
-
-- Initial standalone `omp-activities` plugin.
-- Interactive activity history viewer accessible through `/activities` or `Ctrl+Alt+A`.
-- Case-sensitive regular expression search (`/` forward, `?` backward, `n` next, `N` previous) across tool history rows and call details.
-- Live editor widget displaying up to three active tool calls and subagent progress states.
-- Session timing persistence stored under `dev.attacktive.activity.timing`.
-- Support for resetting visible history on `/clear` using native session boundaries.
+## [0.1.1] - 2026-10-26
 
 ### Changed
 
@@ -23,6 +16,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Preserve history tool identity and tool-name search matches when exit metadata would otherwise consume narrow rows.
+
+## [0.1.0] - 2026-10-23
+
+### Added
+
+- Initial standalone `omp-activities` plugin.
+- Interactive activity history viewer accessible through `/activities` or `Ctrl+Alt+A`.
+- Case-sensitive regular expression search (`/` forward, `?` backward, `n` next, `N` previous) across tool history rows and call details.
+- Live editor widget displaying up to three active tool calls and subagent progress states.
+- Session timing persistence stored under `dev.attacktive.activity.timing`.
+- Support for resetting visible history on `/clear` using native session boundaries.
+
+### Fixed
+
 - Use a fullscreen history viewer instead of exposing conversation rows above it.
 - Keep navigation hints visible in narrow terminals.
 - Preserve retained calls when retry rewinds a branch after `/clear`.

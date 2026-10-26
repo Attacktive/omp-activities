@@ -25,7 +25,7 @@ From GitHub:
 omp plugin install github:Attacktive/omp-activities
 ```
 
-From npm, once published:
+From npm:
 
 ```bash
 omp plugin install omp-activities
