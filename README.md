@@ -81,6 +81,7 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 
 ### Live activity widget
 
+- A dim, theme-colored outline separates the live activity area from the conversation and editor.
 - A themed Activity heading and tree-style rows display up to three active activities and an overflow counter.
 - Ordinary calls show right-aligned elapsed runtime, with long targets truncated before runtime metadata.
 - A dim `/activities` hint appears in the heading when space permits and is omitted in narrow terminals.
@@ -88,6 +89,8 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 - Active subagents take precedence over completed siblings.
 - Terminal states remain visible until the parent task settles.
 - The widget operates independently of OMP's tool-card visibility settings.
+
+![Outlined live activity widget rendered at normal and narrow widths](docs/images/live-activity-outline.png)
 
 ## Data, cost, and privacy
 

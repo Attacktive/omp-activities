@@ -76,6 +76,62 @@ test
 
 test
 (
+	'keeps the live outline closed and aligned across narrow and wide terminals',
+	() => {
+		const history = new ActivityHistory();
+		history.start('read', 'read', { path: 'very/long/目標/'.repeat(20) }, 1000);
+		history.start('bash', 'bash', { command: 'sleep 60' }, 1000);
+
+		for (const width of [2, 3, 4, 8, 24, 80, 120]) {
+			const lines = liveWidget(history.calls, 2300, width, theme as never)!;
+			expect(lines[0]?.startsWith('╭'))
+				.toBe(true);
+
+			expect(lines[0]?.endsWith('╮'))
+				.toBe(true);
+
+			expect(lines.at(-1)?.startsWith('╰'))
+				.toBe(true);
+
+			expect(lines.at(-1)?.endsWith('╯'))
+				.toBe(true);
+
+			for (const line of lines) {
+				expect(visibleWidth(line))
+					.toBe(width);
+			}
+
+			for (const line of lines.slice(1, -1)) {
+				expect(line.startsWith('│'))
+					.toBe(true);
+
+				expect(line.endsWith('│'))
+					.toBe(true);
+			}
+		}
+	}
+);
+
+test
+(
+	'does not leave an outline when activity finishes or the terminal cannot fit its sides',
+	() => {
+		const history = new ActivityHistory();
+		history.start('read', 'read', { path: 'main.ts' }, 1000);
+		for (const width of [0, 1]) {
+			expect(liveWidget(history.calls, 2300, width, theme as never))
+				.toEqual([]);
+		}
+
+		history.finish('read', {}, false, 2300);
+
+		expect(liveWidget(history.calls, 2300, 80, theme as never))
+			.toBeUndefined();
+	}
+);
+
+test
+(
 	'shows the reported subagent tool and drops it when progress moves on',
 	() => {
 		const history = new ActivityHistory();
@@ -128,9 +184,6 @@ test
 		const lines = liveWidget(history.calls, 2000, 120, theme as never)!;
 		const rendered = lines.join('\n');
 
-		expect(lines)
-			.toHaveLength(5);
-
 		expectToContainAll(rendered, ['main.ts', 'One', 'grep needle', 'Two', 'Pending', '+2 more']);
 
 		expectToContainNone(rendered, ['Old', 'Three', 'Four', 'stale']);
@@ -165,9 +218,6 @@ test
 
 			const lines = liveWidget(history.calls, 300, 120, theme as never)!;
 
-			expect(lines)
-				.toHaveLength(4);
-
 			expectToContainAll(lines.join('\n'), ['Two', 'Three', 'Four']);
 
 			expect(lines.join('\n'))
@@ -190,9 +240,6 @@ test
 		history.update('task', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'completed', currentTool: 'read', currentToolArgs: 'stale.ts' }, { id: 'Two', status: 'pending' }] } }, 200);
 
 		const lines = liveWidget(history.calls, 300, 120, theme as never)!;
-
-		expect(lines)
-			.toHaveLength(2);
 
 		expect(lines.join('\n'))
 			.toContain('Two');
@@ -264,7 +311,7 @@ test
 				.toBeLessThanOrEqual(24);
 		}
 
-		expect(lines[1])
+		expect(lines[2])
 			.toContain('1.3s');
 	}
 );

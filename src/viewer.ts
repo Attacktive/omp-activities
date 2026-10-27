@@ -572,14 +572,20 @@ function liveWidget(calls: readonly ActivityCall[], now: number, width: number, 
 		return undefined;
 	}
 
+	if (width < 2) {
+		return [];
+	}
+
+	const innerWidth = width - 2;
+
 	let heading = ` ${theme.fg('accent', theme.bold('ACTIVITY'))}${theme.fg('dim', ` · ${running.length} active`)}`;
 	const hint = theme.fg('dim', '/activities');
-	if (visibleWidth(heading) + visibleWidth(hint) + 4 <= width) {
-		heading = alignedText(heading, hint, width);
+	if (visibleWidth(heading) + visibleWidth(hint) + 4 <= innerWidth) {
+		heading = alignedText(heading, hint, innerWidth);
 	}
 
 	const rows: string[] = [];
-	const contentWidth = Math.max(0, width - 4);
+	const contentWidth = Math.max(0, innerWidth - 4);
 	let rowCount = 0;
 	for (const call of running) {
 		const agents = taskProgress(call);
@@ -608,15 +614,21 @@ function liveWidget(calls: readonly ActivityCall[], now: number, width: number, 
 		rows.push(theme.fg('dim', `+${rowCount - 3} more`));
 	}
 
-	const lines = [truncateToWidth(heading, width)];
+	const border = theme.fg('dim', '│');
+	const lines = [theme.fg('dim', `╭${'─'.repeat(innerWidth)}╮`)];
+	const title = truncateToWidth(heading, innerWidth);
+	lines.push(`${border}${title}${' '.repeat(innerWidth - visibleWidth(title))}${border}`);
 	for (let index = 0; index < rows.length; index++) {
 		let branch = ' ├─ ';
 		if (index === rows.length - 1) {
 			branch = ' └─ ';
 		}
 
-		lines.push(truncateToWidth(`${theme.fg('dim', branch)}${rows[index]}`, width));
+		const row = truncateToWidth(`${theme.fg('dim', branch)}${rows[index]}`, innerWidth);
+		lines.push(`${border}${row}${' '.repeat(innerWidth - visibleWidth(row))}${border}`);
 	}
+
+	lines.push(theme.fg('dim', `╰${'─'.repeat(innerWidth)}╯`));
 
 	return lines;
 }

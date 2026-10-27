@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## Unreleased
 
+### Changed
+
+- Outline the live activity widget with a dim, theme-colored border while preserving runtime alignment and narrow-terminal truncation.
+
 ## [0.1.1] - 2026-10-26
 
 ### Changed
