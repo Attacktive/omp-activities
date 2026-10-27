@@ -618,6 +618,7 @@ function liveWidget(calls: readonly ActivityCall[], now: number, width: number, 
 	const lines = [theme.fg('dim', `╭${'─'.repeat(innerWidth)}╮`)];
 	const title = truncateToWidth(heading, innerWidth);
 	lines.push(`${border}${title}${' '.repeat(innerWidth - visibleWidth(title))}${border}`);
+
 	for (let index = 0; index < rows.length; index++) {
 		let branch = ' ├─ ';
 		if (index === rows.length - 1) {
