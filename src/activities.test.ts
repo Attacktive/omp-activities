@@ -44,13 +44,19 @@ function fixture(settings?: Settings) {
 	const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text };
 	let rendered = '';
 	let widget: Widget | undefined;
+	let tick: (() => void) | undefined;
 	const context = {
 		agent: { kind: 'main' },
+		cwd: settings?.getCwd(),
 		mode: 'tui',
 		hasUI: true,
 		sessionManager: { getBranch: () => [], getLeafId: () => null, getLeafEntry: () => undefined },
 		getAsyncJobSnapshot: () => snapshot,
-		setInterval: () => 1,
+		setInterval: (callback: () => void) => {
+			tick = callback;
+
+			return 1;
+		},
 		clearTimer: () => {},
 		ui: {
 			setWidget: (_key: string, factory?: WidgetFactory) => {
@@ -82,6 +88,7 @@ function fixture(settings?: Settings) {
 		timings,
 		emit: (name: string, event: unknown) => withActiveSettings(settings, () => handlers.get(name)!(event, context)),
 		widget: () => widget?.render(120).join('\n'),
+		tick: () => tick?.(),
 		details: async () => {
 			await commands.get('activities')!('', context);
 
@@ -198,6 +205,8 @@ test
 	'mounts the live widget only while stock tool activity is hidden',
 	async () => {
 		const settings = Settings.isolated();
+		const siblingSettings = Settings.isolated();
+		cfgDisplayHideToolActivity.set(siblingSettings, false);
 		const app = fixture(settings);
 		app.emit('session_start', {});
 		app.emit('tool_execution_start', { toolCallId: 'call_1', toolName: 'bash', args: { command: 'sleep 1' } });
@@ -209,6 +218,13 @@ test
 			.toContain('sleep 1');
 
 		cfgDisplayHideToolActivity.set(settings, true);
+		await Promise.resolve();
+
+		expect(app.widget())
+			.toContain('sleep 1');
+
+		app.tick();
+		cfgDisplayHideToolActivity.set(siblingSettings, true);
 		await Promise.resolve();
 
 		expect(app.widget())

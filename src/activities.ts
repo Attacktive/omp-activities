@@ -1,7 +1,7 @@
 import { matchesKey } from '@oh-my-pi/pi-tui';
 import type { TUI } from '@oh-my-pi/pi-tui';
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent';
-import { findScopedSettings } from '@oh-my-pi/pi-coding-agent/config/settings';
+import { findScopedSettings, withActiveSettings } from '@oh-my-pi/pi-coding-agent/config/settings';
 import type { Settings } from '@oh-my-pi/pi-coding-agent/config/settings';
 import { cfgDisplayHideToolActivity } from '@oh-my-pi/pi-coding-agent/modes/settings';
 import { ActivityHistory, TIMING_ENTRY, timingFor } from './history';
@@ -44,14 +44,17 @@ function activity(pi: ExtensionAPI) {
 	}
 
 	function bindSettings(ctx: ExtensionContext) {
-		const next = findScopedSettings(ctx.cwd);
-		if (!next || next === scopedSettings) {
+		if (scopedSettings) {
 			return;
 		}
 
-		removeSettingsListener?.();
+		const next = findScopedSettings(ctx.cwd);
+		if (!next) {
+			return;
+		}
+
 		scopedSettings = next;
-		removeSettingsListener = cfgDisplayHideToolActivity.listen(next, () => refresh());
+		removeSettingsListener = cfgDisplayHideToolActivity.listen(next, () => withActiveSettings(next, () => refresh()));
 	}
 
 	function shouldShowWidget(live: boolean) {
