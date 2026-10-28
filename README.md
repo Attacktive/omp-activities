@@ -88,7 +88,7 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 - Task calls display reported subagent names, active tool names and targets (or current intent when no target is available), and states.
 - Active subagents take precedence over completed siblings.
 - Terminal states remain visible until the parent task settles.
-- The widget operates independently of OMP's tool-card visibility settings.
+- The widget appears only while OMP's built-in tool activity is hidden (`display.hideToolActivity`).
 
 ![Outlined live activity widget rendered at normal and narrow widths](docs/images/live-activity-outline.png)
 

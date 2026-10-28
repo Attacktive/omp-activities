@@ -1,6 +1,9 @@
 import { matchesKey } from '@oh-my-pi/pi-tui';
 import type { TUI } from '@oh-my-pi/pi-tui';
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent';
+import { findScopedSettings } from '@oh-my-pi/pi-coding-agent/config/settings';
+import type { Settings } from '@oh-my-pi/pi-coding-agent/config/settings';
+import { cfgDisplayHideToolActivity } from '@oh-my-pi/pi-coding-agent/modes/settings';
 import { ActivityHistory, TIMING_ENTRY, timingFor } from './history';
 import type { ActivityCall } from './history';
 import { ActivityViewer, isLive, liveWidget } from './viewer';
@@ -17,6 +20,8 @@ function activity(pi: ExtensionAPI) {
 	let widgetTui: TUI | undefined;
 	let widgetMounted = false;
 	let removeInputListener: (() => void) | undefined;
+	let scopedSettings: Settings | undefined;
+	let removeSettingsListener: (() => void) | undefined;
 	let observedLeaf: string | null = null;
 	let observedReset: string | null = null;
 	const interruptCandidates = new Set<string>();
@@ -29,6 +34,60 @@ function activity(pi: ExtensionAPI) {
 		if (timer !== undefined && context) {
 			context.clearTimer(timer);
 			timer = undefined;
+		}
+	}
+
+	function clearSettingsListener() {
+		removeSettingsListener?.();
+		removeSettingsListener = undefined;
+		scopedSettings = undefined;
+	}
+
+	function bindSettings(ctx: ExtensionContext) {
+		const next = findScopedSettings(ctx.cwd);
+		if (!next || next === scopedSettings) {
+			return;
+		}
+
+		removeSettingsListener?.();
+		scopedSettings = next;
+		removeSettingsListener = cfgDisplayHideToolActivity.listen(next, () => refresh());
+	}
+
+	function shouldShowWidget(live: boolean) {
+		if (!live) {
+			return false;
+		}
+
+		if (!scopedSettings) {
+			return true;
+		}
+
+		return cfgDisplayHideToolActivity.get(scopedSettings);
+	}
+
+	function syncWidget(ctx: ExtensionContext, live: boolean) {
+		const visible = shouldShowWidget(live);
+		if (visible && !widgetMounted) {
+			ctx.ui.setWidget
+			(
+				WIDGET_KEY,
+				(tui, theme) => {
+					widgetTui = tui;
+
+					return {
+						render(width: number) {
+							return liveWidget(history.calls, Date.now(), width, theme) ?? [];
+						}
+					};
+				}
+			);
+
+			widgetMounted = true;
+		} else if (!visible && widgetMounted) {
+			ctx.ui.setWidget(WIDGET_KEY, undefined);
+			widgetMounted = false;
+			widgetTui = undefined;
 		}
 	}
 
@@ -74,28 +133,9 @@ function activity(pi: ExtensionAPI) {
 			return;
 		}
 
+		bindSettings(context);
 		const live = history.calls.some(isLive);
-		if (live && !widgetMounted) {
-			context.ui.setWidget
-			(
-				WIDGET_KEY,
-				(tui, theme) => {
-					widgetTui = tui;
-
-					return {
-						render(width: number) {
-							return liveWidget(history.calls, Date.now(), width, theme) ?? [];
-						}
-					};
-				}
-			);
-
-			widgetMounted = true;
-		} else if (!live && widgetMounted) {
-			context.ui.setWidget(WIDGET_KEY, undefined);
-			widgetMounted = false;
-			widgetTui = undefined;
-		}
+		syncWidget(context, live);
 
 		widgetTui?.requestRender();
 		viewerTui?.requestRender();
@@ -108,6 +148,7 @@ function activity(pi: ExtensionAPI) {
 
 	function restore(_event: unknown, ctx: ExtensionContext) {
 		stopTimer();
+		clearSettingsListener();
 		removeInputListener?.();
 		removeInputListener = undefined;
 		interruptCandidates.clear();
@@ -305,6 +346,7 @@ function activity(pi: ExtensionAPI) {
 		'session_shutdown',
 		() => {
 			stopTimer();
+			clearSettingsListener();
 			removeInputListener?.();
 			viewer?.close();
 			viewer = undefined;

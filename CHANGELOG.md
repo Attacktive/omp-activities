@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## Unreleased
 
+### Changed
+
+- Show the live activity widget only while OMP's built-in tool activity is hidden (`display.hideToolActivity`).
+
 ## [0.2.0] - 2026-10-27
 
 ### Changed

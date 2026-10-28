@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+import { Settings, withActiveSettings } from '@oh-my-pi/pi-coding-agent/config/settings';
+import { cfgDisplayHideToolActivity } from '@oh-my-pi/pi-coding-agent/modes/settings';
 import activity from './activities';
 import type { ActivityTiming } from './history';
 import type { ActivityViewer } from './viewer';
@@ -23,12 +25,17 @@ interface Snapshot {
 type EventHandler = (event: unknown, context: unknown) => unknown;
 type CommandHandler = (args: string, context: unknown) => Promise<void>;
 type ViewerFactory = (tui: unknown, theme: unknown, keys: unknown, done: () => void) => ActivityViewer;
+type WidgetFactory = (tui: unknown, theme: unknown) => Widget;
+
+interface Widget {
+	render: (width: number) => string[];
+}
 
 interface Command {
 	handler: CommandHandler;
 }
 
-function fixture() {
+function fixture(settings?: Settings) {
 	const handlers = new Map<string, EventHandler>();
 	const commands = new Map<string, CommandHandler>();
 	const timings: ActivityTiming[] = [];
@@ -36,6 +43,7 @@ function fixture() {
 	const tui = { terminal: { rows: 100, columns: 120 }, requestRender: () => {} };
 	const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text };
 	let rendered = '';
+	let widget: Widget | undefined;
 	const context = {
 		agent: { kind: 'main' },
 		mode: 'tui',
@@ -45,7 +53,9 @@ function fixture() {
 		setInterval: () => 1,
 		clearTimer: () => {},
 		ui: {
-			setWidget: () => {},
+			setWidget: (_key: string, factory?: WidgetFactory) => {
+				widget = factory?.(tui, theme);
+			},
 			onTerminalInput: () => () => {},
 			custom: async (factory: ViewerFactory) => {
 				const viewer = factory(tui, theme, undefined, () => {});
@@ -70,7 +80,8 @@ function fixture() {
 	return {
 		snapshot,
 		timings,
-		emit: (name: string, event: unknown) => handlers.get(name)!(event, context),
+		emit: (name: string, event: unknown) => withActiveSettings(settings, () => handlers.get(name)!(event, context)),
+		widget: () => widget?.render(120).join('\n'),
 		details: async () => {
 			await commands.get('activities')!('', context);
 
@@ -179,5 +190,41 @@ test
 
 			app.emit('session_shutdown', {});
 		}
+	}
+);
+
+test
+(
+	'mounts the live widget only while stock tool activity is hidden',
+	async () => {
+		const settings = Settings.isolated();
+		const app = fixture(settings);
+		app.emit('session_start', {});
+		app.emit('tool_execution_start', { toolCallId: 'call_1', toolName: 'bash', args: { command: 'sleep 1' } });
+
+		expect(app.widget())
+			.toBeUndefined();
+
+		expect(await app.details())
+			.toContain('sleep 1');
+
+		cfgDisplayHideToolActivity.set(settings, true);
+		await Promise.resolve();
+
+		expect(app.widget())
+			.toContain('sleep 1');
+
+		cfgDisplayHideToolActivity.set(settings, false);
+		await Promise.resolve();
+
+		expect(app.widget())
+			.toBeUndefined();
+
+		app.emit('session_shutdown', {});
+		cfgDisplayHideToolActivity.set(settings, true);
+		await Promise.resolve();
+
+		expect(app.widget())
+			.toBeUndefined();
 	}
 );

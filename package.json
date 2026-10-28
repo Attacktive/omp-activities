@@ -36,7 +36,7 @@
 	},
 	"omp": {
 		"name": "Activities",
-		"description": "Compact tool history and live activity, independent of tool-card visibility",
+		"description": "Compact tool history and live activity when built-in tool activity is hidden",
 		"extensions": ["src/activities.ts"]
 	}
 }
