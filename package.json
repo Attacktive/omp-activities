@@ -1,6 +1,6 @@
 {
 	"name": "omp-activities",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "An unofficial OMP plugin for compact tool history and live activity without extra AI calls",
 	"license": "MIT",
 	"type": "module",
