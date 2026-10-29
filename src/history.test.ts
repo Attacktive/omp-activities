@@ -611,7 +611,7 @@ test
 	() => {
 		const history = new ActivityHistory();
 		const call = history.start('single', 'task', { tasks: [{ name: 'Scout', agent: 'scout', task: 'Find entry' }] }, 100);
-		history.finish('single', { details: { async: { type: 'task', state: 'running', jobId: 'task_1' }, progress: [{ id: 'Scout', status: 'running' }] } }, false, 150);
+		history.finish('single', { details: { async: { type: 'task', state: 'running', jobId: 'Scout' }, progress: [{ id: 'Scout', status: 'running' }] } }, false, 150);
 		history.syncJobs({ running: [{ id: 'Scout', status: 'running', startTime: 110 }], recent: [] });
 
 		expect(call.state)
@@ -625,5 +625,173 @@ test
 
 		expect(detailText(call))
 			.toContain('single scout report');
+	}
+);
+
+test
+(
+	'settles a fresh single-agent task call with a suffixed jobId when the colliding unsuffixed job remains in snapshots',
+	() => {
+		const history = new ActivityHistory();
+		const older = { id: 'Scout', status: 'completed', startTime: 10, endTime: 50 };
+		const call = history.start('single', 'task', { tasks: [{ name: 'Scout', agent: 'scout', task: 'Find entry' }] }, 100);
+		history.finish('single', { details: { async: { type: 'task', state: 'running', jobId: 'Scout-2' }, progress: [{ id: 'Scout', status: 'running' }] } }, false, 105);
+		history.syncJobs({ running: [{ id: 'Scout-2', status: 'running', startTime: 110 }], recent: [older] });
+
+		expect(call.state)
+			.toBe('background');
+
+		history.syncJobs({ running: [], recent: [older, { id: 'Scout-2', status: 'completed', startTime: 110, endTime: 450 }] });
+		history.deliver({ customType: 'async-result', content: 'suffixed scout report', details: { jobs: [{ jobId: 'Scout-2', status: 'completed' }] } });
+
+		expect([call.state, call.endedAt])
+			.toEqual(['done', 450]);
+
+		expect(detailText(call))
+			.toContain('suffixed scout report');
+	}
+);
+
+test
+(
+	'reattaches a restored legacy single-agent task call using persisted jobStartedAt identity and suffixed jobId',
+	() => {
+		const history = new ActivityHistory();
+		const details = { async: { type: 'task', state: 'running', jobId: 'Scout-2' }, progress: [{ id: 'Scout', status: 'running' }] };
+		const entries = [
+			{ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'single', name: 'task', arguments: { tasks: [{ name: 'Scout' }] } }] } },
+			{ type: 'message', message: { role: 'toolResult', toolCallId: 'single', toolName: 'task', content: [], details } },
+			{ type: 'custom', customType: 'dev.attacktive.activity.timing', data: { id: 'single', startedAt: 100, jobStartedAt: 110, state: 'background' } }
+		];
+
+		const older = { id: 'Scout', status: 'completed', startTime: 10, endTime: 50 };
+		history.restore(entries);
+		history.syncJobs({ running: [{ id: 'Scout-2', status: 'running', startTime: 110 }], recent: [older] });
+
+		expect(history.calls[0]!.state)
+			.toBe('background');
+
+		history.syncJobs({ running: [], recent: [older, { id: 'Scout-2', status: 'completed', startTime: 110, endTime: 450 }] });
+		history.deliver({ customType: 'async-result', content: 'restored single scout report', details: { jobs: [{ jobId: 'Scout-2', status: 'completed' }] } });
+
+		expect([history.calls[0]!.state, history.calls[0]!.endedAt])
+			.toEqual(['done', 450]);
+
+		expect(detailText(history.calls[0]!))
+			.toContain('restored single scout report');
+
+		history.restore(entries);
+		history.syncJobs({ running: [{ id: 'Scout-2', status: 'running', startTime: 1010 }], recent: [] });
+		history.deliver({ customType: 'async-result', content: 'unrelated scout report', details: { jobs: [{ jobId: 'Scout-2', status: 'completed' }] } });
+
+		expect([history.calls[0]!.state, history.calls[0]!.delivery])
+			.toEqual(['interrupted', undefined]);
+	}
+);
+
+test
+(
+	'restores terminal task deliveries when final timing entries are absent or stale',
+	() => {
+		const history = new ActivityHistory();
+		const singleDetails = { async: { type: 'task', state: 'running', jobId: 'Scout-2' }, progress: [{ id: 'Scout', status: 'running' }] };
+
+		for (const [status, expectedState] of [['completed', 'done'], ['failed', 'failed'], ['cancelled', 'canceled']] as const) {
+			for (const withStaleTiming of [false, true]) {
+				const entries: unknown[] = [
+					{ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'single', name: 'task', arguments: { tasks: [{ name: 'Scout' }] } }] } },
+					{ type: 'message', message: { role: 'toolResult', toolCallId: 'single', toolName: 'task', content: [], details: singleDetails } }
+				];
+
+				if (withStaleTiming) {
+					entries.push({ type: 'custom', customType: 'dev.attacktive.activity.timing', data: { id: 'single', startedAt: 100, jobStartedAt: 110, state: 'background' } });
+				}
+
+				entries.push({ type: 'custom_message', customType: 'async-result', content: 'terminal scout report', details: { jobs: [{ jobId: 'Scout-2', status }] } });
+
+				history.restore(entries);
+				history.syncJobs({ running: [], recent: [] });
+
+				expect(history.calls[0]!.state)
+					.toBe(expectedState);
+
+				expect(detailText(history.calls[0]!))
+					.toContain('terminal scout report');
+			}
+		}
+
+		const batchDetails = { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] };
+		const partialBatchEntries = [
+			{ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'batch', name: 'task', arguments: {} }] } },
+			{ type: 'message', message: { role: 'toolResult', toolCallId: 'batch', toolName: 'task', content: [], details: batchDetails } },
+			{ type: 'custom_message', customType: 'async-result', content: 'first child report', details: { jobs: [{ jobId: 'One', status: 'completed' }] } }
+		];
+
+		history.restore(partialBatchEntries);
+
+		expect(history.calls[0]!.state)
+			.toBe('interrupted');
+
+		history.restore([...partialBatchEntries, { type: 'custom_message', customType: 'async-result', content: 'second child failure', details: { jobs: [{ jobId: 'Two', status: 'failed' }] } }]);
+
+		expect(history.calls[0]!.state)
+			.toBe('failed');
+	}
+);
+
+test
+(
+	'preserves terminal timing state when only some batch children have delivery receipts',
+	() => {
+		const history = new ActivityHistory();
+		const batchDetails = { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] };
+		const delivery = { type: 'custom_message', customType: 'async-result', content: 'first child report', details: { jobs: [{ jobId: 'One', status: 'completed' }] } };
+		const consumed = { details: { op: 'wait', jobs: [{ id: 'Two', status: 'completed', resultText: 'second child report', durationMs: 380 }] } };
+
+		for (const expectedState of ['done', 'failed', 'canceled'] as const) {
+			const timing = {
+				id: 'batch',
+				startedAt: 100,
+				endedAt: 500,
+				state: expectedState,
+				jobTimings: {
+					One: { startedAt: 110, status: 'completed', endedAt: 300 },
+					Two: { startedAt: 120, status: 'running' }
+				}
+			};
+
+			const entries = [
+				{ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'batch', name: 'task', arguments: {} }] } },
+				{ type: 'message', message: { role: 'toolResult', toolCallId: 'batch', toolName: 'task', content: [], details: batchDetails } },
+				delivery,
+				{ type: 'message', message: { role: 'toolResult', toolCallId: 'wait', toolName: 'jobs', details: consumed.details } },
+				{ type: 'custom', customType: 'dev.attacktive.activity.timing', data: timing }
+			];
+
+			history.restore(entries);
+			history.syncJobs({ running: [], recent: [] });
+
+			expect(history.calls[0]!.state)
+				.toBe(expectedState);
+
+			expect(history.calls[0]!.endedAt)
+				.toBe(500);
+
+			expect(detailText(history.calls[0]!))
+				.toContain('first child report');
+		}
+
+		const live = new ActivityHistory();
+		const call = live.start('live-batch', 'task', {}, 100);
+		live.finish('live-batch', { details: batchDetails }, false, 150);
+		live.update('live-batch', { details: { async: { type: 'task', state: 'completed', jobId: 'One' }, progress: [{ id: 'One', status: 'completed' }, { id: 'Two', status: 'completed' }] } }, 500);
+
+		expect(call.state)
+			.toBe('done');
+
+		live.deliver(delivery);
+
+		expect(call.state)
+			.toBe('done');
 	}
 );

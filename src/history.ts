@@ -192,11 +192,104 @@ function isTaskBatch(call: ActivityCall) {
 	return call.tool === 'task' && record(details.async).type === 'task' && Array.isArray(details.progress) && details.progress.length > 0;
 }
 
+function childJobId(call: ActivityCall, agentId: string, progressCount: number) {
+	if (progressCount === 1) {
+		const jobId = record(record(record(call.result).details).async).jobId;
+		if (typeof jobId === 'string' && jobId) {
+			return jobId;
+		}
+	}
+
+	return agentId;
+}
+
+function legacyTaskId(call: ActivityCall) {
+	if (!isTaskBatch(call)) {
+		return undefined;
+	}
+
+	const progress = record(record(call.result).details).progress as unknown[];
+	if (progress.length !== 1) {
+		return undefined;
+	}
+
+	let fallback = '';
+	const agentId = record(progress[0]).id;
+	if (typeof agentId === 'string') {
+		fallback = agentId;
+	}
+
+	const id = childJobId(call, fallback, 1);
+	if (!id) {
+		return undefined;
+	}
+
+	return id;
+}
+
+function migrateLegacyTaskTiming(call: ActivityCall) {
+	if (call.state !== 'interrupted' || call.jobStartedAt === undefined || call.jobTimings !== undefined) {
+		return;
+	}
+
+	const id = legacyTaskId(call);
+	if (!id) {
+		return;
+	}
+
+	call.jobTimings = Object.create(null) as Record<string, ActivityJobTiming>;
+	call.jobTimings[id] = { startedAt: call.jobStartedAt, status: 'running' };
+}
+
+function isTerminalJobStatus(status: unknown): status is string {
+	return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'canceled' || status === 'aborted';
+}
+
+function nextBatchState(current: ActivityState, status: unknown) {
+	if (status === 'failed') {
+		return 'failed';
+	}
+
+	if (status === 'aborted' || status === 'cancelled' || status === 'canceled') {
+		if (current !== 'failed') {
+			return 'canceled';
+		}
+
+		return current;
+	}
+
+	return current;
+}
+
+function batchStateFromProgress(call: ActivityCall, deliveredStatuses?: ReadonlyMap<string, string>) {
+	const progress = record(record(call.result).details).progress as unknown[];
+	let state: ActivityState = 'done';
+
+	for (const raw of progress) {
+		const agent = record(raw);
+		const agentId = agent.id;
+		if (typeof agentId !== 'string') {
+			continue;
+		}
+
+		const id = childJobId(call, agentId, progress.length);
+		const status = deliveredStatuses?.get(id) ?? call.jobTimings?.[id]?.status ?? agent.status;
+		if (!isTerminalJobStatus(status)) {
+			return 'background';
+		}
+
+		state = nextBatchState(state, status);
+	}
+
+	return state;
+}
+
 class ActivityHistory {
 	readonly calls: ActivityCall[] = [];
 	#byId = new Map<string, ActivityCall>();
 	#jobs = new Map<string, ActivityCall>();
 	#liveJobs = new Set<ActivityCall>();
+	#deliveredJobs = new WeakMap<ActivityCall, Map<string, string>>();
 
 	start(id: string, tool: string, args: unknown, now: number) {
 		const previous = this.#byId.get(id);
@@ -262,9 +355,9 @@ class ActivityHistory {
 			if (isTaskBatch(call)) {
 				const progress = record(record(result).details).progress as unknown[];
 				for (const agent of progress) {
-					const id = record(agent).id;
-					if (typeof id === 'string') {
-						this.#jobs.set(id, call);
+					const agentId = record(agent).id;
+					if (typeof agentId === 'string') {
+						this.#jobs.set(childJobId(call, agentId, progress.length), call);
 					}
 				}
 			}
@@ -378,11 +471,12 @@ class ActivityHistory {
 		let changed = false;
 		for (const raw of progress) {
 			const agent = record(raw);
-			const id = agent.id;
-			if (typeof id !== 'string') {
+			const agentId = agent.id;
+			if (typeof agentId !== 'string') {
 				continue;
 			}
 
+			const id = childJobId(call, agentId, progress.length);
 			let timing = call.jobTimings?.[id];
 			const job = jobs.get(id);
 			if (job && typeof job.startTime === 'number' && typeof job.status === 'string') {
@@ -410,13 +504,9 @@ class ActivityHistory {
 				endedAt = Math.max(endedAt ?? 0, timing.endedAt);
 			}
 
-			if (status === 'failed') {
-				state = 'failed';
-			} else if (status === 'aborted' || status === 'cancelled' || status === 'canceled') {
-				if (state !== 'failed') {
-					state = 'canceled';
-				}
-			} else if (status !== 'completed') {
+			if (isTerminalJobStatus(status)) {
+				state = nextBatchState(state, status);
+			} else {
 				running = true;
 			}
 		}
@@ -557,7 +647,24 @@ class ActivityHistory {
 			}
 
 			if (info.status === 'completed' || info.status === 'failed' || info.status === 'cancelled') {
-				if (!isTaskBatch(call)) {
+				if (isTaskBatch(call)) {
+					let statuses = this.#deliveredJobs.get(call);
+					if (!statuses) {
+						statuses = new Map<string, string>();
+						this.#deliveredJobs.set(call, statuses);
+					}
+
+					statuses.set(info.jobId, info.status);
+					const existing = call.jobTimings?.[info.jobId];
+					if (existing && !isTerminalJobStatus(existing.status)) {
+						existing.status = info.status;
+					}
+
+					const state = batchStateFromProgress(call, statuses);
+					if (state !== 'background' || (call.state !== 'done' && call.state !== 'failed' && call.state !== 'canceled')) {
+						call.state = state;
+					}
+				} else {
 					call.state = resultState({ details: { async: { state: info.status } } }, false);
 				}
 
@@ -638,7 +745,13 @@ class ActivityHistory {
 						continue;
 					}
 
-					const restored: ActivityJobTiming = { startedAt: job.startedAt, status: job.status };
+					const deliveredStatus = this.#deliveredJobs.get(call)?.get(id);
+					let status = job.status;
+					if (!isTerminalJobStatus(status) && isTerminalJobStatus(deliveredStatus)) {
+						status = deliveredStatus;
+					}
+
+					const restored: ActivityJobTiming = { startedAt: job.startedAt, status };
 					if (typeof job.endedAt === 'number' && Number.isFinite(job.endedAt)) {
 						restored.endedAt = job.endedAt;
 					}
@@ -652,9 +765,16 @@ class ActivityHistory {
 				}
 			}
 
+			const deliveredStatuses = this.#deliveredJobs.get(call);
+			if (isTaskBatch(call) && deliveredStatuses && call.state !== 'done' && call.state !== 'failed' && call.state !== 'canceled') {
+				call.state = batchStateFromProgress(call, deliveredStatuses);
+			}
+
 			if (call.state === 'background' || call.state === 'running') {
 				call.state = 'interrupted';
 			}
+
+			migrateLegacyTaskTiming(call);
 		}
 
 		this.#liveJobs.clear();
@@ -740,5 +860,5 @@ function timingFor(call: ActivityCall) {
 	return { id: call.id, startedAt: call.startedAt, endedAt: call.endedAt, jobStartedAt: call.jobStartedAt, jobTimings: call.jobTimings, state: call.state };
 }
 
-export { ActivityHistory, TIMING_ENTRY, cleanText, describeTarget, detailText, elapsed, outcome, record, timingFor };
+export { ActivityHistory, TIMING_ENTRY, childJobId, cleanText, describeTarget, detailText, elapsed, outcome, record, timingFor };
 export type { ActivityCall, ActivityState, ActivityTiming };

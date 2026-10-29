@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Reconcile single-agent `task` calls through the same child-job timing and completion pipeline as multi-agent batches.
+- Reconcile single-agent `task` calls through the same child-job timing and completion pipeline as multi-agent batches while preserving restored legacy `jobStartedAt` identities, terminal deliveries without final timing entries, and authoritative final timing states.
 - Anchor wrapped detail line offsets per logical line so trailing spaces before blank lines do not collapse search positions.
 
 ## [0.3.0] - 2026-10-28

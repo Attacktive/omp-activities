@@ -1,7 +1,7 @@
 import { Input, matchesKey, sliceWithWidth, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@oh-my-pi/pi-tui';
 import type { Component, TUI } from '@oh-my-pi/pi-tui';
 import type { Theme } from '@oh-my-pi/pi-coding-agent';
-import { cleanText, describeTarget, detailText, elapsed, outcome, record } from './history';
+import { childJobId, cleanText, describeTarget, detailText, elapsed, outcome, record } from './history';
 import type { ActivityCall, ActivityHistory, ActivityState } from './history';
 
 const STATE_LABELS: Record<ActivityState, string> = {
@@ -610,13 +610,14 @@ function progressText(value: unknown) {
 }
 
 /** Terminal job snapshots supersede stale active rows, but active snapshots cannot revive terminal progress. */
-function taskAgentProgress(call: ActivityCall, value: unknown) {
+function taskAgentProgress(call: ActivityCall, value: unknown, progressCount: number) {
 	const agent = record(value);
 	if (typeof agent.id !== 'string' || (agent.status !== 'running' && agent.status !== 'pending')) {
 		return agent;
 	}
 
-	const status = call.jobTimings?.[agent.id]?.status;
+	const id = childJobId(call, agent.id, progressCount);
+	const status = call.jobTimings?.[id]?.status;
 	if (status === undefined || status === 'running' || status === 'pending' || !AGENT_STATE_LABELS.has(status)) {
 		return agent;
 	}
@@ -634,7 +635,7 @@ function taskProgress(call: ActivityCall) {
 		return [];
 	}
 
-	const agents = progress.map(value => taskAgentProgress(call, value)).filter(agent => typeof agent.status === 'string' && AGENT_STATE_LABELS.has(agent.status) && (progressText(agent.id) || progressText(agent.agent)));
+	const agents = progress.map(value => taskAgentProgress(call, value, progress.length)).filter(agent => typeof agent.status === 'string' && AGENT_STATE_LABELS.has(agent.status) && (progressText(agent.id) || progressText(agent.agent)));
 	const active = agents.filter(agent => agent.status === 'running' || agent.status === 'pending');
 	if (active.length) {
 		return active;
