@@ -5,7 +5,7 @@ An unofficial [OMP](https://oh-my-pi.dev) plugin for compact tool history and li
 > [!NOTE]
 > Not built by the OMP team, and not affiliated with them in any way.
 
-![omp-activities displaying recent tool calls and a running PR check](docs/images/activities-preview.webp)
+![omp-activities displaying compact tool history and expanded call details](docs/images/activities-preview.webp)
 
 ## Requirements
 
@@ -52,11 +52,11 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 ### History viewer
 
 - `/activities` or **Ctrl+Alt+A** opens history focused on the newest call.
-- Calls remain in chronological order with a compact tool/target row, outcome, and elapsed time when width permits.
+- Calls remain in chronological order with a compact tool/target row (including structured summaries for `task`, `eval`, `todo`, and `ask`), outcome, and elapsed time when width permits.
 - Tool identity takes priority over secondary exit outcomes and elapsed time in narrow rows, with full exit outcomes available in expanded details.
 - **Up/Down** and **Page Up/Page Down** move selection between calls.
 - **Home** or **g** jumps to the first call; **End** or **G** jumps to the last call.
-- **Enter** expands full arguments, structured exit codes, and output or metadata directly beneath the selected call, retaining neighboring calls when space permits.
+- **Enter** expands full arguments, structured exit codes, and output or metadata directly beneath the selected call with semantic theme coloring for headings, JSON fields, and tool output, retaining neighboring calls when space permits.
 - The same navigation keys (**Up/Down**, **Page Up/Page Down**, **Home/g**, **End/G**) scroll wrapped content while a call is expanded.
 - **Enter**, **q**, or **Escape** collapses the expanded call; **q** or **Escape** closes the viewer when calls are collapsed.
 - **Ctrl+C** backs out without canceling active foreground tools.
@@ -90,7 +90,7 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 - Terminal states remain visible until the parent task settles.
 - The widget appears only while OMP's built-in tool activity is hidden (`display.hideToolActivity`).
 
-![Outlined live activity widget rendered at normal and narrow widths](docs/images/live-activity-outline.png)
+![Live activity widget rendered at normal and narrow widths](docs/images/live-activity.webp)
 
 ## Data, cost, and privacy
 

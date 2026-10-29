@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## Unreleased
 
+### Changed
+
+- Summarize structured tool targets (`task`, `eval`, `todo`, and `ask`) before falling back to generic intent text.
+- Color tool titles, secondary exit outcomes, detail headings, JSON values, tool output, and active subagent labels with semantic theme roles.
+
+### Fixed
+
+- Reconcile single-agent `task` calls through the same child-job timing and completion pipeline as multi-agent batches.
+- Anchor wrapped detail line offsets per logical line so trailing spaces before blank lines do not collapse search positions.
+
 ## [0.3.0] - 2026-10-28
 
 ### Changed

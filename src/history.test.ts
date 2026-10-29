@@ -571,3 +571,59 @@ test
 			.toEqual(['done', undefined]);
 	}
 );
+
+test
+(
+	'describes structured targets for task, eval, todo, and ask calls before falling back to intent',
+	() => {
+		expect(describeTarget({ tasks: [{ name: 'Audit' }, { agent: 'reviewer' }], i: 'Running agents' }))
+			.toBe('Audit, reviewer');
+
+		expect(describeTarget({ tasks: [{ task: 'Inspect conventions\nacross files' }], i: 'Running task' }))
+			.toBe('Inspect conventions across files');
+
+		expect(describeTarget({ language: 'py', title: 'Plot latency', code: 'print(1)', i: 'Evaluating python' }))
+			.toBe('Plot latency');
+
+		expect(describeTarget({ language: 'js', code: '\n  const x = 1;\n  console.log(x);\n', i: 'Evaluating code' }))
+			.toBe('const x = 1; console.log(x);');
+
+		expect(describeTarget({ op: 'done', task: 'Verify baseline tests', i: 'Updating todo' }))
+			.toBe('done Verify baseline tests');
+
+		expect(describeTarget({ op: 'init', list: [{ phase: 'Build', items: ['One'] }], i: 'Initializing todos' }))
+			.toBe('init Build');
+
+		expect(describeTarget({ questions: [{ header: 'Storage', question: 'Which database?' }], i: 'Asking user' }))
+			.toBe('Storage');
+
+		expect(describeTarget({ questions: [{ question: 'Which database?' }], i: 'Asking user' }))
+			.toBe('Which database?');
+
+		expect(describeTarget({ i: 'Fallback intent' }))
+			.toBe('Fallback intent');
+	}
+);
+
+test
+(
+	'tracks and reconciles a single-agent task call with the same child job lifecycle as a batch',
+	() => {
+		const history = new ActivityHistory();
+		const call = history.start('single', 'task', { tasks: [{ name: 'Scout', agent: 'scout', task: 'Find entry' }] }, 100);
+		history.finish('single', { details: { async: { type: 'task', state: 'running', jobId: 'task_1' }, progress: [{ id: 'Scout', status: 'running' }] } }, false, 150);
+		history.syncJobs({ running: [{ id: 'Scout', status: 'running', startTime: 110 }], recent: [] });
+
+		expect(call.state)
+			.toBe('background');
+
+		history.syncJobs({ running: [], recent: [{ id: 'Scout', status: 'completed', startTime: 110, endTime: 450 }] });
+		history.deliver({ customType: 'async-result', content: 'single scout report', details: { jobs: [{ jobId: 'Scout', status: 'completed' }] } });
+
+		expect([call.state, call.endedAt])
+			.toEqual(['done', 450]);
+
+		expect(detailText(call))
+			.toContain('single scout report');
+	}
+);

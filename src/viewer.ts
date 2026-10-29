@@ -23,6 +23,89 @@ const AGENT_STATE_LABELS = new Map([
 	['canceled', 'Canceled']
 ]);
 
+const DETAIL_HEADINGS: Record<string, true> = {
+	Arguments: true,
+	Result: true,
+	Metadata: true,
+	'Background completion': true
+};
+
+function styleJsonScalar(value: string, theme: Theme) {
+	if (value.startsWith('"')) {
+		return theme.fg('syntaxString', value);
+	}
+
+	if (value === 'true' || value === 'false' || value === 'null') {
+		return theme.fg('syntaxKeyword', value);
+	}
+
+	if (/^-?\d+(?:\.\d+)?$/u.test(value)) {
+		return theme.fg('syntaxNumber', value);
+	}
+
+	return theme.fg('syntaxPunctuation', value);
+}
+
+function styleJsonValue(raw: string, theme: Theme) {
+	if (raw.endsWith(',')) {
+		return `${styleJsonScalar(raw.slice(0, -1), theme)}${theme.fg('syntaxPunctuation', ',')}`;
+	}
+
+	return styleJsonScalar(raw, theme);
+}
+
+function styleJsonLine(line: string, theme: Theme) {
+	if (/^\s*[\]{}[,]+\s*$/u.test(line)) {
+		return theme.fg('syntaxPunctuation', line);
+	}
+
+	const propertyMatch = /^(\s*)("(?:\\.|[^"\\])*")(:\s*)(.*)$/u.exec(line);
+	if (propertyMatch) {
+		const [, indent, key, colon, rest] = propertyMatch;
+		return `${indent}${theme.fg('syntaxType', key!)}${theme.fg('syntaxPunctuation', colon!)}${styleJsonValue(rest!, theme)}`;
+	}
+
+	const itemMatch = /^(\s*)("(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?|true|false|null)(,?)$/u.exec(line);
+	if (itemMatch) {
+		const [, indent, literal, comma] = itemMatch;
+		return `${indent}${styleJsonValue(`${literal!}${comma!}`, theme)}`;
+	}
+
+	return undefined;
+}
+
+function styleDetailLine(line: string, theme: Theme) {
+	if (!line) {
+		return '';
+	}
+
+	if (DETAIL_HEADINGS[line]) {
+		return theme.fg('mdHeading', theme.bold(line));
+	}
+
+	if (line === '(not recorded)') {
+		return theme.fg('dim', line);
+	}
+
+	return styleJsonLine(line, theme) ?? theme.fg('toolOutput', line);
+}
+
+function styleJsonContinuation(segment: string, theme: Theme) {
+	if (segment.endsWith(',')) {
+		return `${theme.fg('syntaxString', segment.slice(0, -1))}${theme.fg('syntaxPunctuation', ',')}`;
+	}
+
+	return theme.fg('syntaxString', segment);
+}
+
+function styleDetailSegment(segment: string, rawLine: string, continuation: boolean, theme: Theme) {
+	if (continuation && /^\s*(?:"(?:\\.|[^"\\])*":\s*)?"/u.test(rawLine)) {
+		return styleJsonContinuation(segment, theme);
+	}
+
+	return styleDetailLine(segment, theme);
+}
+
 function isLive(call: ActivityCall) {
 	return call.state === 'running' || call.state === 'background';
 }
@@ -70,6 +153,7 @@ class ActivityViewer implements Component {
 	#offset = 0;
 	#pageSize = 1;
 	#detailCache?: readonly string[];
+	#detailStyled: string[] = [];
 	#detailStarts: number[] = [];
 	#cacheText?: string;
 	#cacheCall?: ActivityCall;
@@ -120,20 +204,32 @@ class ActivityViewer implements Component {
 			}
 
 			this.#cacheText = text;
-			this.#detailCache = wrapTextWithAnsi(text, width);
-
 			// Wrapped plain-text rows map back to source offsets so a search cursor survives reflow.
+			const wrappedLines: string[] = [];
+			this.#detailStyled = [];
 			this.#detailStarts = [];
-			let sourceOffset = 0;
+			let lineStart = 0;
 
-			for (const line of this.#detailCache) {
-				const start = text.indexOf(line, sourceOffset);
-				this.#detailStarts.push(start);
-				sourceOffset = start + line.length;
-				if (text[sourceOffset] === '\n') {
-					sourceOffset++;
+			for (const rawLine of text.split('\n')) {
+				let segmentOffset = 0;
+				let continuation = false;
+				for (const segment of wrapTextWithAnsi(rawLine, width)) {
+					let start = rawLine.indexOf(segment, segmentOffset);
+					if (start < 0) {
+						start = segmentOffset;
+					}
+
+					wrappedLines.push(segment);
+					this.#detailStyled.push(styleDetailSegment(segment, rawLine, continuation, this.#theme));
+					this.#detailStarts.push(lineStart + start);
+					segmentOffset = start + segment.length;
+					continuation = true;
 				}
+
+				lineStart += rawLine.length + 1;
 			}
+
+			this.#detailCache = wrappedLines;
 
 			const matchOffset = this.#detailMatch;
 			if (matchOffset !== undefined) {
@@ -328,14 +424,16 @@ class ActivityViewer implements Component {
 	#callLine(call: ActivityCall, width: number, now: number, selected: boolean) {
 		const labelText = rowLabel(call);
 		const source = rowText(call);
-		const toolWidth = visibleWidth(cleanText(call.tool));
-		const metadataWidth = Math.max(0, width - toolWidth - 3);
-		let statusLabel = rowStatus(call);
-		if (visibleWidth(statusLabel) > metadataWidth) {
-			statusLabel = STATE_LABELS[call.state];
+		const toolName = cleanText(call.tool);
+		const metadataWidth = Math.max(0, width - visibleWidth(toolName) - 3);
+		const stateLabel = STATE_LABELS[call.state];
+		const exitText = outcome(call);
+		const stateOffset = labelText.length + 2;
+		let status = stateText(call, this.#theme, this.#highlight(stateLabel, source, stateOffset));
+		if (exitText && visibleWidth(rowStatus(call)) <= metadataWidth) {
+			status += ` ${this.#theme.fg('muted', this.#highlight(exitText, source, stateOffset + stateLabel.length + 1))}`;
 		}
 
-		let status = stateText(call, this.#theme, this.#highlight(statusLabel, source, labelText.length + 2));
 		if (selected) {
 			status = this.#theme.bold(status);
 		}
@@ -367,7 +465,18 @@ class ActivityViewer implements Component {
 		}
 
 		const visibleLabel = sliceWithWidth(labelText.slice(start), 0, available, true).text;
-		const label = `${prefix}${this.#highlight(visibleLabel, source, start)}`;
+		const toolLength = Math.max(0, Math.min(visibleLabel.length, toolName.length - start));
+		let label = prefix;
+		if (toolLength > 0) {
+			const toolPart = visibleLabel.slice(0, toolLength);
+			label += this.#theme.fg('syntaxFunction', this.#theme.bold(this.#highlight(toolPart, source, start)));
+		}
+
+		if (visibleLabel.length > toolLength) {
+			const targetPart = visibleLabel.slice(toolLength);
+			label += this.#highlight(targetPart, source, start + toolLength);
+		}
+
 		let row = `${label}${' '.repeat(Math.max(1, width - visibleWidth(label) - visibleWidth(status)))}${status}`;
 
 		if (selected) {
@@ -449,7 +558,13 @@ class ActivityViewer implements Component {
 						branch = '  └ ';
 					}
 
-					lines.push(`${this.#theme.fg('dim', branch)}${this.#highlight(detailLines[detail]!)}`);
+					const detailLine = detailLines[detail]!;
+					let renderedDetail = this.#detailStyled[detail]!;
+					if (this.#matches(detailLine)) {
+						renderedDetail = this.#highlight(detailLine);
+					}
+
+					lines.push(`${this.#theme.fg('border', branch)}${renderedDetail}`);
 				}
 
 				summary += ` · Lines ${this.#offset + 1}–${end} / ${detailLines.length}`;
@@ -543,12 +658,12 @@ function agentActivity(agent: Record<string, unknown>, width: number, theme: The
 	const name = progressText(agent.id) || progressText(agent.agent);
 	const state = AGENT_STATE_LABELS.get(String(agent.status))!;
 	const tool = progressText(agent.currentTool);
-	let label = name;
+	let label = theme.fg('customMessageLabel', name);
 	if (agent.status === 'running' && tool) {
-		label += ` · ${theme.bold(tool)}`;
+		label += `${theme.fg('dim', ' · ')}${theme.fg('syntaxFunction', theme.bold(tool))}`;
 		const target = progressText(agent.currentToolArgs) || progressText(agent.currentToolIntent);
 		if (target) {
-			label += ` ${target}`;
+			label += ` ${theme.fg('muted', target)}`;
 		}
 	}
 
@@ -599,13 +714,13 @@ function liveWidget(calls: readonly ActivityCall[], now: number, width: number, 
 		} else {
 			rowCount++;
 			if (rows.length < 3) {
-				let metadata = elapsed(call, now);
+				let metadata = theme.fg('dim', elapsed(call, now));
 				if (call.state === 'background') {
-					metadata = `${STATE_LABELS[call.state]}  ${metadata}`;
+					metadata = `${theme.fg('accent', STATE_LABELS[call.state])}  ${metadata}`;
 				}
 
-				const label = `${theme.bold(cleanText(call.tool))}  ${describeTarget(call.args)}`;
-				rows.push(alignedText(label, theme.fg('dim', metadata), contentWidth));
+				const label = `${theme.fg('syntaxFunction', theme.bold(cleanText(call.tool)))}  ${describeTarget(call.args)}`;
+				rows.push(alignedText(label, metadata, contentWidth));
 			}
 		}
 	}

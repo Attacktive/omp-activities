@@ -747,6 +747,102 @@ test
 
 test
 (
+	'preserves distinct detail search offsets for blank lines after wrapped trailing spaces',
+	() => {
+		const { viewer, history } = fixture(16);
+		const repeated = [
+			`${'word '.repeat(12)}   `,
+			'',
+			'',
+			'tail'
+		].join('\n');
+
+		history.update('last', { content: [{ type: 'text', text: repeated }] });
+		viewer.handleInput('\r');
+		viewer.render(30);
+
+		viewer.handleInput('G');
+		viewer.render(30);
+		viewer.handleInput('?');
+		viewer.handleInput('^$');
+		viewer.handleInput('\r');
+
+		expect(viewer.render(30).join('\n'))
+			.not.toContain('Pattern not found');
+
+		viewer.handleInput('n');
+
+		expect(viewer.render(30).join('\n'))
+			.not.toContain('Pattern not found');
+	}
+);
+
+test
+(
+	'applies semantic theme colors to tool names, outcomes, detail sections, JSON values, and live agents',
+	() => {
+		const history = new ActivityHistory();
+		history.start('call_1', 'eval', { language: 'js', command: 'first-part second-part', count: 3, active: true }, 1000);
+		history.finish('call_1', { content: [{ type: 'text', text: 'plain output' }], details: { exitCode: 0 } }, false, 1200);
+		history.start('call_2', 'task', {}, 1300);
+		history.update('call_2', { details: { progress: [{ id: 'Scout', status: 'running', currentTool: 'read', currentToolArgs: 'src/viewer.ts' }] } });
+
+		const taggedTheme = {
+			fg: (style: string, text: string) => `\x1b]99;${style}\x07${text}\x1b]99;/${style}\x07`,
+			bg: (_style: string, text: string) => text,
+			bold: (text: string) => text,
+			inverse: (text: string) => `[${text}]`
+		};
+
+		const tui = { terminal: { rows: 32, columns: 32 }, requestRender: () => {} };
+		const viewer = new ActivityViewer(history, tui as never, taggedTheme as never, () => {});
+		viewer.handleInput('g');
+		viewer.handleInput('\r');
+		const rendered = viewer.render(32).join('\n');
+
+		expectToContainAll
+		(
+			rendered,
+			[
+				'\x1b]99;syntaxFunction\x07eval\x1b]99;/syntaxFunction\x07',
+				'\x1b]99;border\x07  │ \x1b]99;/border\x07',
+				'\x1b]99;mdHeading\x07Arguments\x1b]99;/mdHeading\x07',
+				'\x1b]99;syntaxType\x07"language"\x1b]99;/syntaxType\x07',
+				'\x1b]99;syntaxString\x07"js"\x1b]99;/syntaxString\x07',
+				'\x1b]99;syntaxString\x07"first-part\x1b]99;/syntaxString\x07',
+				'\x1b]99;syntaxString\x07second-part"\x1b]99;/syntaxString\x07',
+				'\x1b]99;syntaxNumber\x073\x1b]99;/syntaxNumber\x07',
+				'\x1b]99;syntaxKeyword\x07true\x1b]99;/syntaxKeyword\x07',
+				'\x1b]99;mdHeading\x07Result\x1b]99;/mdHeading\x07',
+				'\x1b]99;toolOutput\x07plain output\x1b]99;/toolOutput\x07'
+			]
+		);
+
+		const wideRendered = viewer.render(120).join('\n');
+		expectToContainAll
+		(
+			wideRendered,
+			[
+				'\x1b]99;success\x07Done\x1b]99;/success\x07',
+				'\x1b]99;muted\x07exit 0\x1b]99;/muted\x07'
+			]
+		);
+
+		const live = liveWidget(history.calls, 2000, 120, taggedTheme as never)!.join('\n');
+		expectToContainAll
+		(
+			live,
+			[
+				'\x1b]99;customMessageLabel\x07Scout\x1b]99;/customMessageLabel\x07',
+				'\x1b]99;syntaxFunction\x07read\x1b]99;/syntaxFunction\x07',
+				'\x1b]99;muted\x07src/viewer.ts\x1b]99;/muted\x07'
+			]
+		);
+	}
+);
+
+test
+(
 	'observes a native clear without session events and does not erase the first post-clear tool',
 	async () => {
 		const { default: activity } = await import('./activities');

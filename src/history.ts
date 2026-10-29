@@ -53,16 +53,92 @@ function cleanText(value: string) {
 
 /* eslint-enable no-control-regex */
 
-function describeTarget(args: unknown) {
-	const input = record(args);
+function cleanTarget(value: unknown) {
+	if (typeof value !== 'string' || !value) {
+		return '';
+	}
 
-	for (const key of ['path', 'file', 'command', 'query', 'pattern', 'url', 'input', 'i']) {
-		if (typeof input[key] === 'string' && input[key]) {
-			return cleanText(input[key]).replace(/\s+/g, ' ').trim();
+	return cleanText(value).replace(/\s+/g, ' ').trim();
+}
+
+function describeTasks(tasks: readonly unknown[]) {
+	const names: string[] = [];
+
+	for (const raw of tasks) {
+		const item = record(raw);
+		const label = cleanTarget(item.name) || cleanTarget(item.agent);
+		if (label) {
+			names.push(label);
+		}
+	}
+
+	if (names.length) {
+		return names.join(', ');
+	}
+
+	for (const raw of tasks) {
+		const prompt = cleanTarget(record(raw).task);
+		if (prompt) {
+			return prompt;
 		}
 	}
 
 	return '';
+}
+
+function describeTodo(input: Record<string, unknown>) {
+	const op = cleanTarget(input.op);
+	if (!op) {
+		return '';
+	}
+
+	let detail = cleanTarget(input.task) || cleanTarget(input.phase);
+	if (!detail && Array.isArray(input.list)) {
+		detail = cleanTarget(record(input.list[0]).phase);
+	}
+
+	if (!detail && Array.isArray(input.items)) {
+		detail = cleanTarget(input.items[0]);
+	}
+
+	if (detail) {
+		return `${op} ${detail}`;
+	}
+
+	return op;
+}
+
+function describeQuestions(questions: readonly unknown[]) {
+	for (const raw of questions) {
+		const item = record(raw);
+		const target = cleanTarget(item.header) || cleanTarget(item.question);
+		if (target) {
+			return target;
+		}
+	}
+
+	return '';
+}
+
+function describeTarget(args: unknown) {
+	const input = record(args);
+
+	for (const key of ['path', 'file', 'command', 'query', 'pattern', 'url', 'input', 'title', 'code']) {
+		const target = cleanTarget(input[key]);
+		if (target) {
+			return target;
+		}
+	}
+
+	if (Array.isArray(input.tasks)) {
+		return describeTasks(input.tasks) || cleanTarget(input.i);
+	}
+
+	if (Array.isArray(input.questions)) {
+		return describeQuestions(input.questions) || cleanTarget(input.i);
+	}
+
+	return describeTodo(input) || cleanTarget(input.i);
 }
 
 function resultState(result: unknown, isError: boolean) {
@@ -113,7 +189,7 @@ function elapsed(call: ActivityCall, now: number) {
 function isTaskBatch(call: ActivityCall) {
 	const details = record(record(call.result).details);
 
-	return call.tool === 'task' && record(details.async).type === 'task' && Array.isArray(details.progress) && details.progress.length > 1;
+	return call.tool === 'task' && record(details.async).type === 'task' && Array.isArray(details.progress) && details.progress.length > 0;
 }
 
 class ActivityHistory {
