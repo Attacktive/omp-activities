@@ -1,0 +1,65 @@
+name: 'Dependabot Auto-Merge'
+on:
+  pull_request:
+    types: ['opened', 'reopened', 'synchronize', 'ready_for_review']
+permissions:
+  contents: 'write'
+  pull-requests: 'write'
+jobs:
+  auto-merge:
+    runs-on: 'ubuntu-latest'
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: 'Fetch Dependabot metadata'
+        id: 'metadata'
+        uses: 'dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      # The branch ruleset does not require passing CI checks, so gate merging on the three Bun jobs explicitly
+      - name: 'Wait for Bun tests'
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          for attempt in {1..60}; do
+            checks=$(gh pr checks "$PR_URL" --json name,state || true)
+
+            if printf '%s' "$checks" | jq -e '
+              any(.[];
+                (.name == "test (ubuntu-latest)" or .name == "test (macos-latest)" or .name == "test (windows-latest)")
+                and (.state == "FAILURE" or .state == "CANCELLED" or .state == "TIMED_OUT" or .state == "ACTION_REQUIRED")
+              )
+            ' > /dev/null 2>&1; then
+              echo '::error::Bun tests failed or were canceled'
+              exit 1
+            fi
+
+            if printf '%s' "$checks" | jq -e '
+              . as $checks |
+              ["test (ubuntu-latest)", "test (macos-latest)", "test (windows-latest)"] |
+              all(.[]; . as $name | any($checks[]; .name == $name and .state == "SUCCESS"))
+            ' > /dev/null 2>&1; then
+              exit 0
+            fi
+
+            sleep 15
+          done
+
+          echo '::error::Bun tests did not pass within 15 minutes'
+          exit 1
+      # Majors wait for a human; patch and minor updates merge on green checks
+      - name: 'Approve PR'
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: |
+          gh pr review "$PR_URL" --approve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+      - name: 'Enable Auto-Merge (Rebase)'
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: 'gh pr merge "$PR_URL" --auto --rebase --match-head-commit "$HEAD_SHA"'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
