@@ -23,3 +23,8 @@ updates:
     commit-message:
       prefix: 'ci'
     versioning-strategy: 'increase'
+    groups:
+      oh-my-pi:
+        patterns:
+          - '@oh-my-pi/pi-coding-agent'
+          - '@oh-my-pi/pi-tui'
