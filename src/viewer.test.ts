@@ -34,8 +34,7 @@ function expectToContainNone(actual: string, unexpected: readonly string[]) {
 	}
 }
 
-test
-(
+test(
 	'constrains narrow footer and fullscreen height bounds in a 20x10 terminal',
 	() => {
 		const { viewer } = fixture(10);
@@ -62,8 +61,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps elapsed time in the live activity widget',
 	() => {
 		const history = new ActivityHistory();
@@ -74,8 +72,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps the live outline closed and aligned across narrow and wide terminals',
 	() => {
 		const history = new ActivityHistory();
@@ -112,8 +109,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'does not leave an outline when activity finishes or the terminal cannot fit its sides',
 	() => {
 		const history = new ActivityHistory();
@@ -130,8 +126,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'shows the reported subagent tool and drops it when progress moves on',
 	() => {
 		const history = new ActivityHistory();
@@ -159,15 +154,13 @@ test
 	}
 );
 
-test
-(
+test(
 	'limits parallel agent rows globally and excludes completed siblings while others run',
 	() => {
 		const history = new ActivityHistory();
 		history.start('read', 'read', { path: 'main.ts' }, 1000);
 		history.start('task', 'task', {}, 1000);
-		history.update
-		(
+		history.update(
 			'task',
 			{
 				details: {
@@ -190,8 +183,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'excludes snapshot-settled task siblings from active rows and overflow counts',
 	() => {
 		const transitions = [['completed', 'running'], ['failed', 'running'], ['cancelled', 'pending']] as const;
@@ -207,14 +199,11 @@ test
 			];
 
 			history.finish('task', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress } }, false, 150);
-			history.syncJobs
-			(
-				{
-					running: [{ id: 'Two', status: 'running', startTime: 120 }, { id: 'Three', status: 'running', startTime: 130 }, { id: 'Four', status: 'running', startTime: 140 }],
-					recent: [{ id: 'One', status, startTime: 110, endTime: 200 }],
-					delivery: { pendingJobIds: [] }
-				}
-			);
+			history.syncJobs({
+				running: [{ id: 'Two', status: 'running', startTime: 120 }, { id: 'Three', status: 'running', startTime: 130 }, { id: 'Four', status: 'running', startTime: 140 }],
+				recent: [{ id: 'One', status, startTime: 110, endTime: 200 }],
+				delivery: { pendingJobIds: [] }
+			});
 
 			const lines = liveWidget(history.calls, 300, 120, theme as never)!;
 
@@ -229,8 +218,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'does not let running snapshots override terminal or queued task progress',
 	() => {
 		const history = new ActivityHistory();
@@ -252,14 +240,12 @@ test
 	}
 );
 
-test
-(
+test(
 	'sanitizes agent progress and uses current intent only when no target is reported',
 	() => {
 		const history = new ActivityHistory();
 		history.start('task', 'task', {}, 1000);
-		history.update
-		(
+		history.update(
 			'task',
 			{
 				details: {
@@ -282,8 +268,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'retains ordinary task fallback when progress is unavailable or malformed',
 	() => {
 		const history = new ActivityHistory();
@@ -298,8 +283,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'preserves live runtime metadata when long targets fill a narrow widget',
 	() => {
 		const history = new ActivityHistory();
@@ -340,8 +324,7 @@ function fixture(rows = 16) {
 	return { history, viewer, screen, isClosed: () => closed };
 }
 
-test
-(
+test(
 	'expands details beneath the selected call without losing chronological neighbors',
 	() => {
 		const { viewer, screen, isClosed } = fixture(24);
@@ -385,8 +368,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps call context while scrolling expanded output to its end',
 	() => {
 		const { viewer, history, screen } = fixture(16);
@@ -420,8 +402,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'fits collapsed and expanded history within short and narrow terminal bounds',
 	() => {
 		for (const rows of [4, 6, 10]) {
@@ -444,8 +425,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps the expanded call and its output reachable when only one context row fits',
 	() => {
 		const { viewer, history } = fixture(10);
@@ -463,8 +443,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'preserves the complete outcome when a wide target crosses the label boundary',
 	() => {
 		const { viewer, history } = fixture(10);
@@ -476,8 +455,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'preserves failed tool identity before exit metadata in a 20-column terminal',
 	() => {
 		const { viewer, history } = fixture(10);
@@ -496,8 +474,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reveals a searched tool name despite long failure metadata at narrow widths',
 	() => {
 		const { viewer, history } = fixture(10);
@@ -515,8 +492,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'navigates to first and last calls with both key pairs',
 	() => {
 		const { viewer, screen } = fixture();
@@ -529,8 +505,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'skips hidden-output matches and repeats only through matching rows',
 	() => {
 		const { viewer, history, screen } = fixture();
@@ -563,8 +538,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'cancels search entry without navigating or discarding the previous pattern',
 	() => {
 		const { viewer, screen, isClosed } = fixture();
@@ -588,8 +562,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps selection on invalid regex and permits editing and an empty-pattern repeat',
 	() => {
 		const { viewer, screen } = fixture();
@@ -619,8 +592,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'searches and highlights detail lines and preserves first/last navigation',
 	() => {
 		const { viewer, history, screen } = fixture(15);
@@ -657,8 +629,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'does not revisit bottom-page matches after detail reflow or invalidation',
 	() => {
 		const { viewer, history, screen } = fixture(24);
@@ -690,8 +661,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reuses the logical detail match for empty-pattern repeats near the bottom',
 	() => {
 		const { viewer, history, screen } = fixture(24);
@@ -725,8 +695,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'handles zero-width regex matches and empty history without looping',
 	() => {
 		const { viewer, history, screen } = fixture();
@@ -745,8 +714,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'preserves distinct detail search offsets for blank lines after wrapped trailing spaces',
 	() => {
 		const { viewer, history } = fixture(16);
@@ -777,8 +745,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'applies semantic theme colors to tool names, outcomes, detail sections, JSON values, and live agents',
 	() => {
 		const history = new ActivityHistory();
@@ -800,8 +767,7 @@ test
 		viewer.handleInput('\r');
 		const rendered = viewer.render(32).join('\n');
 
-		expectToContainAll
-		(
+		expectToContainAll(
 			rendered,
 			[
 				'\x1b]99;syntaxFunction\x07eval\x1b]99;/syntaxFunction\x07',
@@ -819,8 +785,7 @@ test
 		);
 
 		const wideRendered = viewer.render(120).join('\n');
-		expectToContainAll
-		(
+		expectToContainAll(
 			wideRendered,
 			[
 				'\x1b]99;success\x07Done\x1b]99;/success\x07',
@@ -829,8 +794,7 @@ test
 		);
 
 		const live = liveWidget(history.calls, 2000, 120, taggedTheme as never)!.join('\n');
-		expectToContainAll
-		(
+		expectToContainAll(
 			live,
 			[
 				'\x1b]99;customMessageLabel\x07Scout\x1b]99;/customMessageLabel\x07',
@@ -841,8 +805,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'observes a native clear without session events and does not erase the first post-clear tool',
 	async () => {
 		const { default: activity } = await import('./activities');
@@ -936,8 +899,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reveals a matching target beyond the normal row truncation',
 	() => {
 		const { viewer, history } = fixture();
@@ -957,8 +919,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'backs out of details before closing with q and allows q inside a search pattern',
 	() => {
 		for (const details of [false, true]) {
@@ -993,8 +954,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'preserves semantic detail colors when highlighting search matches across JSON and output lines',
 	() => {
 		const history = new ActivityHistory();
@@ -1018,8 +978,7 @@ test
 
 		const rendered = viewer.render(32).join('\n');
 
-		expectToContainAll
-		(
+		expectToContainAll(
 			rendered,
 			[
 				'\x1b]99;mdHeading\x07[Arguments]\x1b]99;/mdHeading\x07',
@@ -1034,8 +993,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps wide CJK and astral emoji intact during search highlighting and horizontal scrolling',
 	() => {
 		const history = new ActivityHistory();
@@ -1079,8 +1037,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'scrolls horizontally to trailing search match in long commands without quadratic slowdown',
 	() => {
 		const history = new ActivityHistory();

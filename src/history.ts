@@ -38,8 +38,6 @@ function record(value: unknown) {
 	return {};
 }
 
-/** Removes untrusted terminal controls while preserving output line structure. */
-
 /* eslint-disable no-control-regex -- deliberate terminal control character and escape sequence stripping */
 function cleanText(value: string) {
 	return value
@@ -415,7 +413,6 @@ class ActivityHistory {
 		this.#liveJobs.delete(call);
 	}
 
-	/** Receipt commitment can precede message events, so only explicit consumption retires undelivered results. */
 	#retireSettledJobs(snapshot: Record<string, unknown>, jobs: ReadonlyMap<unknown, Record<string, unknown>>, consumedResult: unknown) {
 		const consumed = record(record(consumedResult).details);
 		if ((consumed.op === 'wait' || consumed.op === 'cancel') && Array.isArray(consumed.jobs)) {
@@ -457,7 +454,6 @@ class ActivityHistory {
 		}
 	}
 
-	/** Reconciles each child independently so restored batches retain execution identity and settled siblings. */
 	#settleBatch(call: ActivityCall, jobs: ReadonlyMap<unknown, Record<string, unknown>>) {
 		if (call.state !== 'background' && call.state !== 'interrupted') {
 			return false;
@@ -528,7 +524,6 @@ class ActivityHistory {
 		return changed;
 	}
 
-	/** Uses the host's read-only job snapshot, not tool polling or model turns. */
 	syncJobs(snapshot: unknown, consumedResult?: unknown) {
 		const jobs = record(snapshot);
 		const rows: unknown[] = [];
@@ -673,7 +668,6 @@ class ActivityHistory {
 		}
 	}
 
-	/** Reconstructs only the selected branch; old missing results are not live executions. */
 	restore(entries: readonly unknown[]) {
 		this.calls.length = 0;
 		this.#byId.clear();
@@ -789,8 +783,7 @@ class ActivityHistory {
 function safeJson(value: unknown) {
 	const seen = new WeakSet<object>();
 
-	const serialized = JSON.stringify
-	(
+	const serialized = JSON.stringify(
 		value,
 		(_key, item: unknown) => {
 			if (typeof item === 'bigint') {

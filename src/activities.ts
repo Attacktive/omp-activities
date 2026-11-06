@@ -10,7 +10,6 @@ import { ActivityViewer, isLive, liveWidget } from './viewer';
 
 const WIDGET_KEY = 'dev.attacktive.activity';
 
-/** Tracks tool activity without changing tools, provider context, or display settings. */
 function activity(pi: ExtensionAPI) {
 	const history = new ActivityHistory();
 	let context: ExtensionContext | undefined;
@@ -72,8 +71,7 @@ function activity(pi: ExtensionAPI) {
 	function syncWidget(ctx: ExtensionContext, live: boolean) {
 		const visible = shouldShowWidget(live);
 		if (visible && !widgetMounted) {
-			ctx.ui.setWidget
-			(
+			ctx.ui.setWidget(
 				WIDGET_KEY,
 				(tui, theme) => {
 					widgetTui = tui;
@@ -128,6 +126,7 @@ function activity(pi: ExtensionAPI) {
 		}
 
 		syncReset(context);
+
 		for (const call of history.syncJobs(context.getAsyncJobSnapshot(), consumedResult)) {
 			persist(call);
 		}
@@ -137,11 +136,13 @@ function activity(pi: ExtensionAPI) {
 		}
 
 		bindSettings(context);
+
 		const live = history.calls.some(isLive);
 		syncWidget(context, live);
 
 		widgetTui?.requestRender();
 		viewerTui?.requestRender();
+
 		if (live && timer === undefined) {
 			timer = context.setInterval(refresh, 1000);
 		} else if (!live) {
@@ -151,6 +152,7 @@ function activity(pi: ExtensionAPI) {
 
 	function restore(_event: unknown, ctx: ExtensionContext) {
 		stopTimer();
+
 		clearSettingsListener();
 		removeInputListener?.();
 		removeInputListener = undefined;
@@ -173,21 +175,19 @@ function activity(pi: ExtensionAPI) {
 		observedLeaf = ctx.sessionManager.getLeafId();
 
 		if (ctx.mode === 'tui') {
-			removeInputListener = ctx.ui.onTerminalInput
-			(
-				data => {
-					if (!viewer && (matchesKey(data, 'escape') || matchesKey(data, 'ctrl+c'))) {
-						interruptCandidates.clear();
-						for (const call of history.calls) {
-							if (call.state === 'running') {
-								interruptCandidates.add(call.id);
-							}
+			removeInputListener = ctx.ui.onTerminalInput(data => {
+				if (!viewer && (matchesKey(data, 'escape') || matchesKey(data, 'ctrl+c'))) {
+					interruptCandidates.clear();
+
+					for (const call of history.calls) {
+						if (call.state === 'running') {
+							interruptCandidates.add(call.id);
 						}
 					}
-
-					return undefined;
 				}
-			);
+
+				return undefined;
+			});
 		}
 
 		refresh();
@@ -207,8 +207,7 @@ function activity(pi: ExtensionAPI) {
 		refresh();
 
 		try {
-			await ctx.ui.custom<void>
-			(
+			await ctx.ui.custom<void>(
 				(tui, theme, _keys, done) => {
 					viewerTui = tui;
 					viewer = new ActivityViewer(history, tui, theme, () => done(undefined));
@@ -235,8 +234,7 @@ function activity(pi: ExtensionAPI) {
 	pi.on('session_branch', restore);
 	pi.on('session_tree', restore);
 
-	pi.on
-	(
+	pi.on(
 		'agent_start',
 		(_event, ctx) => {
 			if (ctx.agent.kind !== 'main') {
@@ -245,12 +243,12 @@ function activity(pi: ExtensionAPI) {
 
 			context = ctx;
 			refresh();
+
 			interruptCandidates.clear();
 		}
 	);
 
-	pi.on
-	(
+	pi.on(
 		'tool_execution_start',
 		(event, ctx) => {
 			if (ctx.agent.kind !== 'main') {
@@ -264,8 +262,7 @@ function activity(pi: ExtensionAPI) {
 		}
 	);
 
-	pi.on
-	(
+	pi.on(
 		'tool_execution_update',
 		(event, ctx) => {
 			if (ctx.agent.kind !== 'main') {
@@ -281,8 +278,7 @@ function activity(pi: ExtensionAPI) {
 		}
 	);
 
-	pi.on
-	(
+	pi.on(
 		'tool_execution_end',
 		(event, ctx) => {
 			if (ctx.agent.kind !== 'main') {
@@ -299,8 +295,7 @@ function activity(pi: ExtensionAPI) {
 		}
 	);
 
-	pi.on
-	(
+	pi.on(
 		'message_end',
 		(event, ctx) => {
 			if (ctx.agent.kind !== 'main') {
@@ -328,8 +323,7 @@ function activity(pi: ExtensionAPI) {
 		}
 	);
 
-	pi.on
-	(
+	pi.on(
 		'agent_end',
 		(_event, ctx) => {
 			if (ctx.agent.kind !== 'main') {
@@ -344,8 +338,7 @@ function activity(pi: ExtensionAPI) {
 		}
 	);
 
-	pi.on
-	(
+	pi.on(
 		'session_shutdown',
 		() => {
 			stopTimer();

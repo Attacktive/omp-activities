@@ -72,16 +72,13 @@ function fixture(settings?: Settings) {
 		}
 	};
 
-	activity
-	(
-		{
-			setLabel: () => {},
-			on: (name: string, handler: EventHandler) => handlers.set(name, handler),
-			registerCommand: (name: string, command: Command) => commands.set(name, command.handler),
-			registerShortcut: () => {},
-			appendEntry: (_type: string, data: ActivityTiming) => timings.push(data)
-		} as never
-	);
+	activity({
+		setLabel: () => {},
+		on: (name: string, handler: EventHandler) => handlers.set(name, handler),
+		registerCommand: (name: string, command: Command) => commands.set(name, command.handler),
+		registerShortcut: () => {},
+		appendEntry: (_type: string, data: ActivityTiming) => timings.push(data)
+	} as never);
 
 	return {
 		snapshot,
@@ -97,8 +94,7 @@ function fixture(settings?: Settings) {
 	};
 }
 
-test
-(
+test(
 	'retains normal async delivery after the host commits its receipt before agent_start and message_end',
 	async () => {
 		const app = fixture();
@@ -126,8 +122,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'retains every batch delivery after receipts disappear and persists the last child end time',
 	async () => {
 		const app = fixture();
@@ -159,8 +154,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'retires only completed wait results, not partial wait progress',
 	async () => {
 		for (const finishWait of [false, true]) {
@@ -200,8 +194,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'mounts the live widget only while stock tool activity is hidden',
 	async () => {
 		const settings = Settings.isolated();

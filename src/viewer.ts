@@ -279,12 +279,13 @@ class ActivityViewer implements Component {
 			}
 
 			this.#cacheText = text;
-			// Wrapped plain-text rows map back to source offsets so a search cursor survives reflow.
-			const wrappedLines: string[] = [];
 			this.#detailStyled = [];
 			this.#detailRaw = [];
 			this.#detailContinuation = [];
 			this.#detailStarts = [];
+
+			// Wrapped plain-text rows map back to source offsets so a search cursor survives reflow.
+			const wrappedLines: string[] = [];
 			let lineStart = 0;
 
 			for (const rawLine of text.split('\n')) {
@@ -650,8 +651,7 @@ class ActivityViewer implements Component {
 					const detailLine = detailLines[detail]!;
 					let renderedDetail = this.#detailStyled[detail]!;
 					if (this.#matches(detailLine)) {
-						renderedDetail = styleDetailSegment
-						(
+						renderedDetail = styleDetailSegment(
 							detailLine,
 							this.#detailRaw[detail]!,
 							this.#detailContinuation[detail]!,
@@ -705,7 +705,6 @@ function progressText(value: unknown) {
 	return cleanText(value).replace(/\s+/g, ' ').trim();
 }
 
-/** Terminal job snapshots supersede stale active rows, but active snapshots cannot revive terminal progress. */
 function taskAgentProgress(call: ActivityCall, value: unknown, progressCount: number) {
 	const agent = record(value);
 	if (typeof agent.id !== 'string' || (agent.status !== 'running' && agent.status !== 'pending')) {

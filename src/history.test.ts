@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test';
 import { ActivityHistory, cleanText, describeTarget, detailText, timingFor } from './history';
 
-test
-(
+test(
 	'keeps invocation order when concurrent calls finish out of order',
 	() => {
 		const history = new ActivityHistory();
@@ -16,8 +15,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps background work live until a terminal result arrives',
 	() => {
 		const history = new ActivityHistory();
@@ -37,8 +35,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'does not cancel a parked job when the foreground agent stops',
 	() => {
 		const history = new ActivityHistory();
@@ -52,8 +49,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'marks only calls in flight at a confirmed interrupt as canceled',
 	() => {
 		const history = new ActivityHistory();
@@ -68,8 +64,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'restores exact execution timing without confusing assistant timestamps with start time',
 	() => {
 		const history = new ActivityHistory();
@@ -88,8 +83,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'replaces abandoned branch activity and marks unfinished historical calls interrupted',
 	() => {
 		const history = new ActivityHistory();
@@ -106,8 +100,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'updates progress without losing original arguments or duplicating calls',
 	() => {
 		const history = new ActivityHistory();
@@ -120,8 +113,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reconciles a background completion by job ID and retains delivered output',
 	() => {
 		const history = new ActivityHistory();
@@ -135,8 +127,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'shows returned text without dumping nested binary image payloads',
 	() => {
 		const history = new ActivityHistory();
@@ -156,8 +147,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'strips terminal controls including OSC links, CSI sequences, and carriage-return spoofing',
 	() => {
 		expect(cleanText('\u001b]52;c;secret\u0007hello\u001b[2J\rworld\t!'))
@@ -168,8 +158,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'restores an observed background completion even when its delivery was not persisted',
 	() => {
 		const history = new ActivityHistory();
@@ -186,8 +175,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'does not attach a new process background job to a completed call with a reused job ID',
 	() => {
 		const history = new ActivityHistory();
@@ -213,8 +201,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'restarts a failed call on native replay without carrying its previous elapsed time or result',
 	() => {
 		const history = new ActivityHistory();
@@ -232,8 +219,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'restores only calls after the latest clear boundary without old timings or background deliveries',
 	() => {
 		const history = new ActivityHistory();
@@ -266,8 +252,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'keeps a task batch live after its primary job finishes and retains every delivery',
 	() => {
 		const history = new ActivityHistory();
@@ -298,8 +283,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'retains async output when a mixed task has already settled on return',
 	() => {
 		const history = new ActivityHistory();
@@ -315,8 +299,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'settles canceled queued batch children without an aggregate update',
 	() => {
 		const history = new ActivityHistory();
@@ -334,8 +317,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reattaches a two-agent batch after navigating away and back and retains its completions',
 	() => {
 		const history = new ActivityHistory();
@@ -386,8 +368,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'retires wait-consumed completions without discarding another pending delivery',
 	() => {
 		const history = new ActivityHistory();
@@ -395,8 +376,7 @@ test
 		const pending = history.start('pending', 'bash', {}, 100);
 		history.finish('consumed', { details: { async: { state: 'running', jobId: 'bg_1' } } }, false, 150);
 		history.finish('pending', { details: { async: { state: 'running', jobId: 'bg_2' } } }, false, 150);
-		history.syncJobs
-		(
+		history.syncJobs(
 			{
 				running: [],
 				recent: [{ id: 'bg_1', status: 'completed', startTime: 110, endTime: 300 }, { id: 'bg_2', status: 'failed', startTime: 120, endTime: 400 }],
@@ -420,15 +400,13 @@ test
 	}
 );
 
-test
-(
+test(
 	'retires consumed batch children while retaining their terminal state until the last child settles',
 	() => {
 		const history = new ActivityHistory();
 		const call = history.start('batch', 'task', {}, 100);
 		history.finish('batch', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] } }, false, 150);
-		history.syncJobs
-		(
+		history.syncJobs(
 			{
 				running: [{ id: 'Two', status: 'running', startTime: 120 }],
 				recent: [{ id: 'One', status: 'failed', startTime: 110, endTime: 300 }],
@@ -442,8 +420,7 @@ test
 		expect([call.state, call.delivery])
 			.toEqual(['background', undefined]);
 
-		history.syncJobs
-		(
+		history.syncJobs(
 			{ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 500 }], delivery: { pendingJobIds: [] } },
 			{ details: { op: 'wait', jobs: [{ id: 'Two', status: 'completed', resultText: 'consumed output' }] } }
 		);
@@ -455,8 +432,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'retires non-async mixed batch members and settles tracking even when recent rows are empty',
 	() => {
 		const history = new ActivityHistory();
@@ -478,22 +454,18 @@ test
 	}
 );
 
-test
-(
+test(
 	'retains the last child when aggregate completion precedes host job settlement',
 	() => {
 		const history = new ActivityHistory();
 		const call = history.start('batch', 'task', {}, 100);
 		history.finish('batch', { details: { async: { type: 'task', state: 'running', jobId: 'One' }, progress: [{ id: 'One', status: 'running' }, { id: 'Two', status: 'running' }] } }, false, 150);
 		history.update('batch', { details: { async: { type: 'task', state: 'completed', jobId: 'One' }, progress: [{ id: 'One', status: 'completed' }, { id: 'Two', status: 'completed' }] } }, 500);
-		history.syncJobs
-		(
-			{
-				running: [{ id: 'Two', status: 'running', startTime: 120 }],
-				recent: [{ id: 'One', status: 'completed', startTime: 110, endTime: 300 }],
-				delivery: { pendingJobIds: [] }
-			}
-		);
+		history.syncJobs({
+			running: [{ id: 'Two', status: 'running', startTime: 120 }],
+			recent: [{ id: 'One', status: 'completed', startTime: 110, endTime: 300 }],
+			delivery: { pendingJobIds: [] }
+		});
 
 		history.syncJobs({ running: [], recent: [{ id: 'Two', status: 'completed', startTime: 120, endTime: 510 }], delivery: { pendingJobIds: ['Two'] } });
 		history.deliver({ customType: 'async-result', content: 'last child output', details: { jobs: [{ jobId: 'Two', status: 'completed' }] } });
@@ -506,8 +478,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'does not retire a new call when an older batch child job ID is reused',
 	() => {
 		const history = new ActivityHistory();
@@ -537,8 +508,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reconciles wait-consumed jobs omitted from the five recent snapshot rows',
 	() => {
 		const history = new ActivityHistory();
@@ -556,8 +526,7 @@ test
 		}
 
 		history.syncJobs({ running, recent: [] });
-		history.syncJobs
-		(
+		history.syncJobs(
 			{ running: [], recent: completed.slice(1), delivery: { pendingJobIds: [] } },
 			{ details: { op: 'wait', jobs: consumed } }
 		);
@@ -572,8 +541,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'describes structured targets for task, eval, todo, and ask calls before falling back to intent',
 	() => {
 		expect(describeTarget({ tasks: [{ name: 'Audit' }, { agent: 'reviewer' }], i: 'Running agents' }))
@@ -605,8 +573,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'tracks and reconciles a single-agent task call with the same child job lifecycle as a batch',
 	() => {
 		const history = new ActivityHistory();
@@ -628,8 +595,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'settles a fresh single-agent task call with a suffixed jobId when the colliding unsuffixed job remains in snapshots',
 	() => {
 		const history = new ActivityHistory();
@@ -652,8 +618,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'reattaches a restored legacy single-agent task call using persisted jobStartedAt identity and suffixed jobId',
 	() => {
 		const history = new ActivityHistory();
@@ -689,8 +654,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'restores terminal task deliveries when final timing entries are absent or stale',
 	() => {
 		const history = new ActivityHistory();
@@ -739,8 +703,7 @@ test
 	}
 );
 
-test
-(
+test(
 	'preserves terminal timing state when only some batch children have delivery receipts',
 	() => {
 		const history = new ActivityHistory();
