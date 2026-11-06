@@ -63,12 +63,30 @@ function clampEnd(text: string, index: number) {
 	return index;
 }
 
-function nextCodePoint(text: string, index: number) {
-	if (isSurrogatePair(text, index + 1)) {
-		return index + 2;
+function prevCodePoint(text: string, index: number) {
+	if (isSurrogatePair(text, index - 1)) {
+		return index - 2;
 	}
 
-	return index + 1;
+	return index - 1;
+}
+
+function scrollOffset(labelText: string, matchStart: number, available: number) {
+	if (visibleWidth(labelText.slice(matchStart)) > available) {
+		return matchStart;
+	}
+
+	let start = matchStart;
+	while (start > 0) {
+		const prev = prevCodePoint(labelText, start);
+		if (prev < 0 || visibleWidth(labelText.slice(prev)) > available) {
+			break;
+		}
+
+		start = prev;
+	}
+
+	return start;
 }
 
 function compilePattern(pattern: string) {
@@ -531,9 +549,7 @@ class ActivityViewer implements Component {
 			const matchStart = clampStart(labelText, match.index);
 			const matchEnd = clampEnd(labelText, Math.min(labelText.length, match.index + match[0].length));
 			if (visibleWidth(labelText.slice(0, matchEnd)) > available) {
-				while (start < matchStart && (visibleWidth(labelText.slice(start, matchEnd)) > available || visibleWidth(labelText.slice(start)) > available)) {
-					start = nextCodePoint(labelText, start);
-				}
+				start = scrollOffset(labelText, matchStart, available);
 			}
 		}
 

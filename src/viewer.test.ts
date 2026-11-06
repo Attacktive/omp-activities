@@ -1078,3 +1078,30 @@ test
 			.not.toContain('[\ud83d]');
 	}
 );
+
+test
+(
+	'scrolls horizontally to trailing search match in long commands without quadratic slowdown',
+	() => {
+		const history = new ActivityHistory();
+		history.start('long', 'bash', { command: `${'a'.repeat(50000)}needle` }, 1000);
+		history.finish('long', { content: [{ type: 'text', text: 'done' }] }, false, 1200);
+
+		const tui = { terminal: { rows: 16, columns: 80 }, requestRender: () => {} };
+		const viewer = new ActivityViewer(history, tui as never, theme as never, () => {});
+		viewer.render(80);
+		viewer.handleInput('/');
+		viewer.handleInput('needle');
+		viewer.handleInput('\r');
+
+		const start = performance.now();
+		const row = viewer.render(80)[1]!;
+		const elapsed = performance.now() - start;
+
+		expect(row)
+			.toContain('[needle]');
+
+		expect(elapsed)
+			.toBeLessThan(100);
+	}
+);
