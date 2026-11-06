@@ -30,80 +30,135 @@ const DETAIL_HEADINGS: Record<string, true> = {
 	'Background completion': true
 };
 
-function styleJsonScalar(value: string, theme: Theme) {
+type Highlight = (text: string, offset: number) => string;
+
+function identityHighlight(text: string) {
+	return text;
+}
+
+function isSurrogatePair(text: string, index: number) {
+	if (index <= 0 || index >= text.length) {
+		return false;
+	}
+
+	const high = text.charCodeAt(index - 1);
+	const low = text.charCodeAt(index);
+
+	return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
+}
+
+function clampStart(text: string, index: number) {
+	if (isSurrogatePair(text, index)) {
+		return index - 1;
+	}
+
+	return index;
+}
+
+function clampEnd(text: string, index: number) {
+	if (isSurrogatePair(text, index)) {
+		return index + 1;
+	}
+
+	return index;
+}
+
+function nextCodePoint(text: string, index: number) {
+	if (isSurrogatePair(text, index + 1)) {
+		return index + 2;
+	}
+
+	return index + 1;
+}
+
+function compilePattern(pattern: string) {
+	try {
+		return new RegExp(pattern, 'gu');
+	} catch {
+		return new RegExp(pattern, 'g');
+	}
+}
+
+function styleJsonScalar(value: string, offset: number, theme: Theme, highlight: Highlight) {
+	const highlighted = highlight(value, offset);
 	if (value.startsWith('"')) {
-		return theme.fg('syntaxString', value);
+		return theme.fg('syntaxString', highlighted);
 	}
 
 	if (value === 'true' || value === 'false' || value === 'null') {
-		return theme.fg('syntaxKeyword', value);
+		return theme.fg('syntaxKeyword', highlighted);
 	}
 
 	if (/^-?\d+(?:\.\d+)?$/u.test(value)) {
-		return theme.fg('syntaxNumber', value);
+		return theme.fg('syntaxNumber', highlighted);
 	}
 
-	return theme.fg('syntaxPunctuation', value);
+	return theme.fg('syntaxPunctuation', highlighted);
 }
 
-function styleJsonValue(raw: string, theme: Theme) {
+function styleJsonValue(raw: string, offset: number, theme: Theme, highlight: Highlight) {
 	if (raw.endsWith(',')) {
-		return `${styleJsonScalar(raw.slice(0, -1), theme)}${theme.fg('syntaxPunctuation', ',')}`;
+		const scalar = raw.slice(0, -1);
+		return `${styleJsonScalar(scalar, offset, theme, highlight)}${theme.fg('syntaxPunctuation', highlight(',', offset + scalar.length))}`;
 	}
 
-	return styleJsonScalar(raw, theme);
+	return styleJsonScalar(raw, offset, theme, highlight);
 }
 
-function styleJsonLine(line: string, theme: Theme) {
+function styleJsonLine(line: string, theme: Theme, highlight: Highlight) {
 	if (/^\s*[\]{}[,]+\s*$/u.test(line)) {
-		return theme.fg('syntaxPunctuation', line);
+		return theme.fg('syntaxPunctuation', highlight(line, 0));
 	}
 
 	const propertyMatch = /^(\s*)("(?:\\.|[^"\\])*")(:\s*)(.*)$/u.exec(line);
 	if (propertyMatch) {
 		const [, indent, key, colon, rest] = propertyMatch;
-		return `${indent}${theme.fg('syntaxType', key!)}${theme.fg('syntaxPunctuation', colon!)}${styleJsonValue(rest!, theme)}`;
+		const keyOffset = indent!.length;
+		const colonOffset = keyOffset + key!.length;
+		const restOffset = colonOffset + colon!.length;
+		return `${highlight(indent!, 0)}${theme.fg('syntaxType', highlight(key!, keyOffset))}${theme.fg('syntaxPunctuation', highlight(colon!, colonOffset))}${styleJsonValue(rest!, restOffset, theme, highlight)}`;
 	}
 
 	const itemMatch = /^(\s*)("(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?|true|false|null)(,?)$/u.exec(line);
 	if (itemMatch) {
 		const [, indent, literal, comma] = itemMatch;
-		return `${indent}${styleJsonValue(`${literal!}${comma!}`, theme)}`;
+		return `${highlight(indent!, 0)}${styleJsonValue(`${literal!}${comma!}`, indent!.length, theme, highlight)}`;
 	}
 
 	return undefined;
 }
 
-function styleDetailLine(line: string, theme: Theme) {
+function styleDetailLine(line: string, theme: Theme, highlight: Highlight) {
 	if (!line) {
 		return '';
 	}
 
 	if (DETAIL_HEADINGS[line]) {
-		return theme.fg('mdHeading', theme.bold(line));
+		return theme.fg('mdHeading', theme.bold(highlight(line, 0)));
 	}
 
 	if (line === '(not recorded)') {
-		return theme.fg('dim', line);
+		return theme.fg('dim', highlight(line, 0));
 	}
 
-	return styleJsonLine(line, theme) ?? theme.fg('toolOutput', line);
+	return styleJsonLine(line, theme, highlight) ?? theme.fg('toolOutput', highlight(line, 0));
 }
 
-function styleJsonContinuation(segment: string, theme: Theme) {
+function styleJsonContinuation(segment: string, theme: Theme, highlight: Highlight) {
 	if (segment.endsWith(',')) {
-		return `${theme.fg('syntaxString', segment.slice(0, -1))}${theme.fg('syntaxPunctuation', ',')}`;
+		const body = segment.slice(0, -1);
+		return `${theme.fg('syntaxString', highlight(body, 0))}${theme.fg('syntaxPunctuation', highlight(',', body.length))}`;
 	}
 
-	return theme.fg('syntaxString', segment);
+	return theme.fg('syntaxString', highlight(segment, 0));
 }
 
-function styleDetailSegment(segment: string, rawLine: string, continuation: boolean, theme: Theme) {
+function styleDetailSegment(segment: string, rawLine: string, continuation: boolean, theme: Theme, highlight: Highlight = identityHighlight) {
 	if (continuation && /^\s*(?:"(?:\\.|[^"\\])*":\s*)?"/u.test(rawLine)) {
-		return styleJsonContinuation(segment, theme);
+		return styleJsonContinuation(segment, theme, highlight);
 	}
 
-	return styleDetailLine(segment, theme);
+	return styleDetailLine(segment, theme, highlight);
 }
 
 function isLive(call: ActivityCall) {
@@ -154,6 +209,8 @@ class ActivityViewer implements Component {
 	#pageSize = 1;
 	#detailCache?: readonly string[];
 	#detailStyled: string[] = [];
+	#detailRaw: string[] = [];
+	#detailContinuation: boolean[] = [];
 	#detailStarts: number[] = [];
 	#cacheText?: string;
 	#cacheCall?: ActivityCall;
@@ -207,6 +264,8 @@ class ActivityViewer implements Component {
 			// Wrapped plain-text rows map back to source offsets so a search cursor survives reflow.
 			const wrappedLines: string[] = [];
 			this.#detailStyled = [];
+			this.#detailRaw = [];
+			this.#detailContinuation = [];
 			this.#detailStarts = [];
 			let lineStart = 0;
 
@@ -221,6 +280,8 @@ class ActivityViewer implements Component {
 
 					wrappedLines.push(segment);
 					this.#detailStyled.push(styleDetailSegment(segment, rawLine, continuation, this.#theme));
+					this.#detailRaw.push(rawLine);
+					this.#detailContinuation.push(continuation);
 					this.#detailStarts.push(lineStart + start);
 					segmentOffset = start + segment.length;
 					continuation = true;
@@ -254,8 +315,14 @@ class ActivityViewer implements Component {
 		let rendered = '';
 		let cursor = 0;
 		for (const match of source.matchAll(this.#pattern)) {
-			const start = Math.max(0, match.index - offset);
-			const end = Math.min(text.length, match.index + match[0].length - offset);
+			const rawStart = Math.max(0, match.index - offset);
+			const rawEnd = Math.min(text.length, match.index + match[0].length - offset);
+			if (rawEnd <= rawStart) {
+				continue;
+			}
+
+			const start = Math.max(cursor, clampStart(text, rawStart));
+			const end = clampEnd(text, rawEnd);
 			if (end <= start) {
 				continue;
 			}
@@ -329,7 +396,7 @@ class ActivityViewer implements Component {
 		input.onSubmit = value => {
 			if (value) {
 				try {
-					this.#pattern = new RegExp(value, 'g');
+					this.#pattern = compilePattern(value);
 					this.#detailMatch = undefined;
 				} catch {
 					this.#searchStatus = 'Invalid pattern';
@@ -460,8 +527,14 @@ class ActivityViewer implements Component {
 		const available = Math.max(0, width - visibleWidth(status) - 3);
 		let start = 0;
 		const match = this.#matches(source);
-		if (selected && match && match.index < labelText.length && visibleWidth(labelText.slice(0, match.index + match[0].length)) > available) {
-			start = match.index;
+		if (selected && match && match.index < labelText.length) {
+			const matchStart = clampStart(labelText, match.index);
+			const matchEnd = clampEnd(labelText, Math.min(labelText.length, match.index + match[0].length));
+			if (visibleWidth(labelText.slice(0, matchEnd)) > available) {
+				while (start < matchStart && (visibleWidth(labelText.slice(start, matchEnd)) > available || visibleWidth(labelText.slice(start)) > available)) {
+					start = nextCodePoint(labelText, start);
+				}
+			}
 		}
 
 		const visibleLabel = sliceWithWidth(labelText.slice(start), 0, available, true).text;
@@ -561,7 +634,14 @@ class ActivityViewer implements Component {
 					const detailLine = detailLines[detail]!;
 					let renderedDetail = this.#detailStyled[detail]!;
 					if (this.#matches(detailLine)) {
-						renderedDetail = this.#highlight(detailLine);
+						renderedDetail = styleDetailSegment
+						(
+							detailLine,
+							this.#detailRaw[detail]!,
+							this.#detailContinuation[detail]!,
+							this.#theme,
+							(part, offset) => this.#highlight(part, detailLine, offset)
+						);
 					}
 
 					lines.push(`${this.#theme.fg('border', branch)}${renderedDetail}`);

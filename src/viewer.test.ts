@@ -992,3 +992,89 @@ test
 		}
 	}
 );
+
+test
+(
+	'preserves semantic detail colors when highlighting search matches across JSON and output lines',
+	() => {
+		const history = new ActivityHistory();
+		history.start('call_1', 'eval', { language: 'js', command: 'first-part second-part', count: 3, active: true }, 1000);
+		history.finish('call_1', { content: [{ type: 'text', text: 'plain output' }] }, false, 1200);
+
+		const taggedTheme = {
+			fg: (style: string, text: string) => `\x1b]99;${style}\x07${text}\x1b]99;/${style}\x07`,
+			bg: (_style: string, text: string) => text,
+			bold: (text: string) => text,
+			inverse: (text: string) => `[${text}]`
+		};
+
+		const tui = { terminal: { rows: 32, columns: 32 }, requestRender: () => {} };
+		const viewer = new ActivityViewer(history, tui as never, taggedTheme as never, () => {});
+		viewer.handleInput('\r');
+		viewer.render(32);
+		viewer.handleInput('/');
+		viewer.handleInput('language|first-part|second-part|3|true|Arguments|plain');
+		viewer.handleInput('\r');
+
+		const rendered = viewer.render(32).join('\n');
+
+		expectToContainAll
+		(
+			rendered,
+			[
+				'\x1b]99;mdHeading\x07[Arguments]\x1b]99;/mdHeading\x07',
+				'\x1b]99;syntaxType\x07"[language]"\x1b]99;/syntaxType\x07\x1b]99;syntaxPunctuation\x07: \x1b]99;/syntaxPunctuation\x07\x1b]99;syntaxString\x07"js"\x1b]99;/syntaxString\x07\x1b]99;syntaxPunctuation\x07,\x1b]99;/syntaxPunctuation\x07',
+				'\x1b]99;syntaxType\x07"command"\x1b]99;/syntaxType\x07\x1b]99;syntaxPunctuation\x07: \x1b]99;/syntaxPunctuation\x07\x1b]99;syntaxString\x07"[first-part]\x1b]99;/syntaxString\x07',
+				'\x1b]99;syntaxString\x07[second-part]"\x1b]99;/syntaxString\x07\x1b]99;syntaxPunctuation\x07,\x1b]99;/syntaxPunctuation\x07',
+				'\x1b]99;syntaxType\x07"count"\x1b]99;/syntaxType\x07\x1b]99;syntaxPunctuation\x07: \x1b]99;/syntaxPunctuation\x07\x1b]99;syntaxNumber\x07[3]\x1b]99;/syntaxNumber\x07\x1b]99;syntaxPunctuation\x07,\x1b]99;/syntaxPunctuation\x07',
+				'\x1b]99;syntaxType\x07"active"\x1b]99;/syntaxType\x07\x1b]99;syntaxPunctuation\x07: \x1b]99;/syntaxPunctuation\x07\x1b]99;syntaxKeyword\x07[true]\x1b]99;/syntaxKeyword\x07',
+				'\x1b]99;toolOutput\x07[plain] output\x1b]99;/toolOutput\x07'
+			]
+		);
+	}
+);
+
+test
+(
+	'keeps wide CJK and astral emoji intact during search highlighting and horizontal scrolling',
+	() => {
+		const history = new ActivityHistory();
+		history.start('wide', 'read', { path: '目標/파일/🚀/needle.ts' }, 1000);
+		history.finish('wide', { content: [{ type: 'text', text: '🚀目標' }] }, false, 1200);
+
+		const tui = { terminal: { rows: 16, columns: 80 }, requestRender: () => {} };
+		const viewer = new ActivityViewer(history, tui as never, theme as never, () => {});
+		viewer.render(80);
+		viewer.handleInput('/');
+		viewer.handleInput('.');
+		viewer.handleInput('\r');
+
+		const listRow = viewer.render(80)[1]!;
+		expect(listRow)
+			.toContain('[🚀]');
+
+		expect(listRow)
+			.not.toContain('[\ud83d]');
+
+		viewer.handleInput('/');
+		viewer.handleInput('🚀');
+		viewer.handleInput('\r');
+
+		const scrolledEmojiRow = viewer.render(30)[1]!;
+		expect(scrolledEmojiRow)
+			.toContain('[🚀]');
+
+		viewer.handleInput('\r');
+		viewer.render(80);
+		viewer.handleInput('/');
+		viewer.handleInput('.');
+		viewer.handleInput('\r');
+
+		const detailScreen = viewer.render(80).join('\n');
+		expect(detailScreen)
+			.toContain('[🚀][目][標]');
+
+		expect(detailScreen)
+			.not.toContain('[\ud83d]');
+	}
+);
