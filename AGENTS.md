@@ -6,7 +6,7 @@
 
 OMP loads the TypeScript entry point directly from `src/activities.ts` at runtime without a separate compilation or build step.
 Development and test suites run on Bun (`bun test`, `bun run lint`, `bun run typecheck`).
-The plugin requires a minimum host version of OMP 18.12.6 (`@oh-my-pi/pi-coding-agent` and `@oh-my-pi/pi-tui`).
+The plugin requires a minimum host version of OMP 19.2.1 (`@oh-my-pi/pi-coding-agent` and `@oh-my-pi/pi-tui`).
 
 ## Session entries and compatibility
 

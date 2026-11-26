@@ -9,7 +9,7 @@ An unofficial [OMP](https://oh-my-pi.dev) plugin for compact tool history and li
 
 ## Requirements
 
-- OMP host version `18.12.6` or later (`@oh-my-pi/pi-coding-agent` and `@oh-my-pi/pi-tui`).
+- OMP host version `19.2.1` or later (`@oh-my-pi/pi-coding-agent` and `@oh-my-pi/pi-tui`).
 
 ## Install
 
@@ -110,7 +110,7 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 - Individual child-agent tools are not archived across restarts.
 - Full details reflect content and metadata available from OMP, subject to existing host truncation and artifact retention.
 - Binary image payloads are summarized rather than decoded.
-- Requires OMP host version `18.12.6` or later.
+- Requires OMP host version `19.2.1` or later.
 
 ## Publishing and release
 
