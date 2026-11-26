@@ -40,7 +40,7 @@ function fixture(settings?: Settings) {
 	const commands = new Map<string, CommandHandler>();
 	const timings: ActivityTiming[] = [];
 	const snapshot: Snapshot = { running: [], recent: [], delivery: { pendingJobIds: [] } };
-	const tui = { terminal: { rows: 100, columns: 120 }, requestRender: () => {} };
+	const tui = { requestRender: () => {}, size: () => ({ columns: 120, rows: 100 }), suspend: async <T>(run: () => Promise<T>) => run() };
 	const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text };
 	let rendered = '';
 	let widget: Widget | undefined;

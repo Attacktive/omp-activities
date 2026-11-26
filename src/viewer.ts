@@ -1,8 +1,36 @@
-import { Input, matchesKey, sliceWithWidth, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@oh-my-pi/pi-tui';
-import type { Component, TUI } from '@oh-my-pi/pi-tui';
-import type { Theme } from '@oh-my-pi/pi-coding-agent';
+import { decodeInput } from '@oh-my-pi/pi-tui/driver/input/decoder';
+import { sliceCells, truncate, visibleWidth, wrap } from '@oh-my-pi/pi-tui/text/width';
+import type { ExtensionRows, ExtensionTheme, ExtensionUiHost } from '@oh-my-pi/pi-coding-agent';
 import { childJobId, cleanText, describeTarget, detailText, elapsed, outcome, record } from './history';
 import type { ActivityCall, ActivityHistory, ActivityState } from './history';
+
+type Decoded = ReturnType<typeof decodeInput>[number];
+
+function decodedEvents(data: string): Decoded[] {
+	const events = decodeInput(data);
+	if (events.length > 0) {
+		return events;
+	}
+
+	return decodeInput(data, { kitty: true });
+}
+
+function keyPresses(data: string) {
+	return decodedEvents(data).flatMap(event => {
+		if (event.type !== 'key' || event.key.kind === 'release') {
+			return [];
+		}
+
+		return [event.key];
+	});
+}
+
+interface SearchDraft {
+	prompt: string;
+	value: string;
+	direction: number;
+}
+
 
 const STATE_LABELS: Record<ActivityState, string> = {
 	running: 'Running',
@@ -97,7 +125,7 @@ function compilePattern(pattern: string) {
 	}
 }
 
-function styleJsonScalar(value: string, offset: number, theme: Theme, highlight: Highlight) {
+function styleJsonScalar(value: string, offset: number, theme: ExtensionTheme, highlight: Highlight) {
 	const highlighted = highlight(value, offset);
 	if (value.startsWith('"')) {
 		return theme.fg('syntaxString', highlighted);
@@ -114,7 +142,7 @@ function styleJsonScalar(value: string, offset: number, theme: Theme, highlight:
 	return theme.fg('syntaxPunctuation', highlighted);
 }
 
-function styleJsonValue(raw: string, offset: number, theme: Theme, highlight: Highlight) {
+function styleJsonValue(raw: string, offset: number, theme: ExtensionTheme, highlight: Highlight) {
 	if (raw.endsWith(',')) {
 		const scalar = raw.slice(0, -1);
 		return `${styleJsonScalar(scalar, offset, theme, highlight)}${theme.fg('syntaxPunctuation', highlight(',', offset + scalar.length))}`;
@@ -123,7 +151,7 @@ function styleJsonValue(raw: string, offset: number, theme: Theme, highlight: Hi
 	return styleJsonScalar(raw, offset, theme, highlight);
 }
 
-function styleJsonLine(line: string, theme: Theme, highlight: Highlight) {
+function styleJsonLine(line: string, theme: ExtensionTheme, highlight: Highlight) {
 	if (/^\s*[\]{}[,]+\s*$/u.test(line)) {
 		return theme.fg('syntaxPunctuation', highlight(line, 0));
 	}
@@ -146,7 +174,7 @@ function styleJsonLine(line: string, theme: Theme, highlight: Highlight) {
 	return undefined;
 }
 
-function styleDetailLine(line: string, theme: Theme, highlight: Highlight) {
+function styleDetailLine(line: string, theme: ExtensionTheme, highlight: Highlight) {
 	if (!line) {
 		return '';
 	}
@@ -162,7 +190,7 @@ function styleDetailLine(line: string, theme: Theme, highlight: Highlight) {
 	return styleJsonLine(line, theme, highlight) ?? theme.fg('toolOutput', highlight(line, 0));
 }
 
-function styleJsonContinuation(segment: string, theme: Theme, highlight: Highlight) {
+function styleJsonContinuation(segment: string, theme: ExtensionTheme, highlight: Highlight) {
 	if (segment.endsWith(',')) {
 		const body = segment.slice(0, -1);
 		return `${theme.fg('syntaxString', highlight(body, 0))}${theme.fg('syntaxPunctuation', highlight(',', body.length))}`;
@@ -171,7 +199,7 @@ function styleJsonContinuation(segment: string, theme: Theme, highlight: Highlig
 	return theme.fg('syntaxString', highlight(segment, 0));
 }
 
-function styleDetailSegment(segment: string, rawLine: string, continuation: boolean, theme: Theme, highlight: Highlight = identityHighlight) {
+function styleDetailSegment(segment: string, rawLine: string, continuation: boolean, theme: ExtensionTheme, highlight: Highlight = identityHighlight) {
 	if (continuation && /^\s*(?:"(?:\\.|[^"\\])*":\s*)?"/u.test(rawLine)) {
 		return styleJsonContinuation(segment, theme, highlight);
 	}
@@ -183,7 +211,7 @@ function isLive(call: ActivityCall) {
 	return call.state === 'running' || call.state === 'background';
 }
 
-function stateText(call: ActivityCall, theme: Theme, label = STATE_LABELS[call.state]) {
+function stateText(call: ActivityCall, theme: ExtensionTheme, label = STATE_LABELS[call.state]) {
 	if (call.state === 'failed') {
 		return theme.fg('error', label);
 	}
@@ -216,10 +244,10 @@ function rowText(call: ActivityCall) {
 	return `${rowLabel(call)}  ${rowStatus(call)}`;
 }
 
-class ActivityViewer implements Component {
+class ActivityViewer implements ExtensionRows {
 	#history: ActivityHistory;
-	#tui: TUI;
-	readonly #theme: Theme;
+	#ui: ExtensionUiHost;
+	readonly #theme: ExtensionTheme;
 	readonly #done: () => void;
 	#selectedId?: string;
 	#details = false;
@@ -235,15 +263,15 @@ class ActivityViewer implements Component {
 	#cacheResult?: unknown;
 	#cacheDelivery?: unknown;
 	#cacheWidth = 0;
-	#searchInput?: Input;
+	#search?: SearchDraft;
 	#pattern?: RegExp;
 	#direction = 1;
 	#searchStatus = '';
 	#detailMatch?: number;
 
-	constructor(history: ActivityHistory, tui: TUI, theme: Theme, done: () => void) {
+	constructor(history: ActivityHistory, ui: ExtensionUiHost, theme: ExtensionTheme, done: () => void) {
 		this.#history = history;
-		this.#tui = tui;
+		this.#ui = ui;
 		this.#theme = theme;
 		this.#done = done;
 		this.#selectedId = history.calls.at(-1)?.id;
@@ -291,7 +319,7 @@ class ActivityViewer implements Component {
 			for (const rawLine of text.split('\n')) {
 				let segmentOffset = 0;
 				let continuation = false;
-				for (const segment of wrapTextWithAnsi(rawLine, width)) {
+				for (const segment of wrap(rawLine, width)) {
 					let start = rawLine.indexOf(segment, segmentOffset);
 					if (start < 0) {
 						start = segmentOffset;
@@ -371,7 +399,7 @@ class ActivityViewer implements Component {
 
 		this.#searchStatus = '';
 		if (this.#details) {
-			const lines = this.#detailLines(this.#cacheWidth || Math.max(1, this.#tui.terminal.columns - 6));
+			const lines = this.#detailLines(this.#cacheWidth || Math.max(1, this.#ui.size().columns - 6));
 			let cursor = this.#offset;
 			const matchOffset = this.#detailMatch;
 			if (matchOffset !== undefined) {
@@ -401,110 +429,142 @@ class ActivityViewer implements Component {
 	}
 
 	#beginSearch(direction: number) {
-		const input = new Input();
-		input.prompt = '/';
-		if (direction < 0) {
-			input.prompt = '?';
-		}
-
-		input.focused = true;
-		input.onEscape = () => {
-			this.#searchInput = undefined;
-		};
-
-		input.onSubmit = value => {
-			if (value) {
-				try {
-					this.#pattern = compilePattern(value);
-					this.#detailMatch = undefined;
-				} catch {
-					this.#searchStatus = 'Invalid pattern';
-					this.#searchInput = undefined;
-					return;
-				}
-			}
-
-			this.#direction = direction;
-			this.#searchInput = undefined;
-			this.#find(direction);
-		};
-
 		this.#searchStatus = '';
-		this.#searchInput = input;
+		this.#search = { prompt: direction < 0 ? '?' : '/', value: '', direction };
 	}
 
-	handleInput(data: string) {
-		if (this.#searchInput) {
-			if (matchesKey(data, 'ctrl+c')) {
-				this.#searchInput = undefined;
-			} else {
-				this.#searchInput.handleInput(data);
-			}
-
-			this.#tui.requestRender();
+	#submitSearch() {
+		const draft = this.#search;
+		if (!draft) {
 			return;
 		}
 
-		if (matchesKey(data, '/') || matchesKey(data, '?')) {
-			let direction = 1;
-			if (matchesKey(data, '?')) {
-				direction = -1;
+		this.#search = undefined;
+		if (draft.value) {
+			try {
+				this.#pattern = compilePattern(draft.value);
+				this.#detailMatch = undefined;
+			} catch {
+				this.#searchStatus = 'Invalid pattern';
+				return;
+			}
+		}
+
+		this.#direction = draft.direction;
+		this.#find(draft.direction);
+	}
+
+	#editSearch(data: string) {
+		for (const event of decodedEvents(data)) {
+			if (!this.#search) {
+				return;
 			}
 
-			this.#beginSearch(direction);
-			this.#tui.requestRender();
+			if (event.type === 'paste') {
+				this.#search.value += event.paste.text.replace(/[\r\n]/g, '');
+				continue;
+			}
+
+			if (event.type !== 'key' || event.key.kind === 'release') {
+				continue;
+			}
+
+			if (event.key.id === 'ctrl+c' || event.key.id === 'escape') {
+				this.#search = undefined;
+				return;
+			}
+
+			if (event.key.id === 'enter') {
+				this.#submitSearch();
+				return;
+			}
+
+			if (event.key.id === 'backspace') {
+				this.#search.value = this.#search.value.slice(0, -1);
+				continue;
+			}
+
+			if (event.key.text) {
+				this.#search.value += event.key.text;
+			}
+		}
+	}
+
+	#move(delta: number) {
+		if (this.#details) {
+			this.#offset = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, this.#offset + delta));
 			return;
 		}
 
-		if (matchesKey(data, 'n') || matchesKey(data, 'shift+n')) {
+		const index = Math.max(0, Math.min(this.#history.calls.length - 1, this.#selectedIndex() + delta));
+		this.#selectedId = this.#history.calls[index]?.id;
+	}
+
+	#onKey(id: string) {
+		if (id === '/' || id === '?') {
+			this.#beginSearch(id === '?' ? -1 : 1);
+			return;
+		}
+
+		if (id === 'n' || id === 'shift+n') {
 			let direction = this.#direction;
-			if (matchesKey(data, 'shift+n')) {
+			if (id === 'shift+n') {
 				direction = -direction;
 			}
 
 			this.#find(direction);
-			this.#tui.requestRender();
 			return;
 		}
 
 		this.#searchStatus = '';
 		this.#detailMatch = undefined;
-		if (matchesKey(data, 'escape') || matchesKey(data, 'ctrl+c') || matchesKey(data, 'q')) {
+		if (id === 'escape' || id === 'ctrl+c' || id === 'q') {
 			if (this.#details) {
 				this.#details = false;
 				this.#offset = 0;
 			} else {
 				this.close();
-				return;
-			}
-		} else if (matchesKey(data, 'enter') && this.#history.calls.length) {
-			this.#details = !this.#details;
-			this.#offset = 0;
-		} else {
-			let delta = 0;
-			if (matchesKey(data, 'up')) {
-				delta = -1;
-			} else if (matchesKey(data, 'down')) {
-				delta = 1;
-			} else if (matchesKey(data, 'pageUp')) {
-				delta = -this.#pageSize;
-			} else if (matchesKey(data, 'pageDown')) {
-				delta = this.#pageSize;
-			} else if (matchesKey(data, 'home') || matchesKey(data, 'g')) {
-				delta = -Number.MAX_SAFE_INTEGER;
-			} else if (matchesKey(data, 'end') || matchesKey(data, 'shift+g')) {
-				delta = Number.MAX_SAFE_INTEGER;
 			}
 
-			if (this.#details) {
-				this.#offset = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, this.#offset + delta));
-			} else {
-				const index = Math.max(0, Math.min(this.#history.calls.length - 1, this.#selectedIndex() + delta));
-				this.#selectedId = this.#history.calls[index]?.id;
-			}
+			return;
 		}
 
-		this.#tui.requestRender();
+		if (id === 'enter' && this.#history.calls.length) {
+			this.#details = !this.#details;
+			this.#offset = 0;
+			return;
+		}
+
+		let delta = 0;
+		if (id === 'up') {
+			delta = -1;
+		} else if (id === 'down') {
+			delta = 1;
+		} else if (id === 'pageUp') {
+			delta = -this.#pageSize;
+		} else if (id === 'pageDown') {
+			delta = this.#pageSize;
+		} else if (id === 'home' || id === 'g') {
+			delta = -Number.MAX_SAFE_INTEGER;
+		} else if (id === 'end' || id === 'shift+g') {
+			delta = Number.MAX_SAFE_INTEGER;
+		}
+
+		this.#move(delta);
+	}
+
+	handleInput(data: string) {
+		if (this.#search) {
+			this.#editSearch(data);
+			this.#ui.requestRender();
+			return;
+		}
+
+		for (const key of keyPresses(data)) {
+			this.#onKey(key.id);
+		}
+
+		this.#ui.requestRender();
 	}
 
 	#callLine(call: ActivityCall, width: number, now: number, selected: boolean) {
@@ -531,7 +591,7 @@ class ActivityViewer implements Component {
 			}
 		}
 
-		status = truncateToWidth(status, metadataWidth);
+		status = truncate(status, metadataWidth);
 
 		let marker = '▸ ';
 		if (selected && this.#details) {
@@ -554,7 +614,7 @@ class ActivityViewer implements Component {
 			}
 		}
 
-		const visibleLabel = sliceWithWidth(labelText.slice(start), 0, available, true).text;
+		const visibleLabel = sliceCells(labelText.slice(start), 0, available, true).text;
 		const toolLength = Math.max(0, Math.min(visibleLabel.length, toolName.length - start));
 		let label = prefix;
 		if (toolLength > 0) {
@@ -577,7 +637,7 @@ class ActivityViewer implements Component {
 	}
 
 	render(width: number) {
-		const height = Math.max(4, this.#tui.terminal.rows);
+		const height = Math.max(4, this.#ui.size().rows);
 		const inner = Math.max(1, width - 2);
 		const calls = this.#history.calls;
 		const selectedIndex = this.#selectedIndex();
@@ -594,17 +654,17 @@ class ActivityViewer implements Component {
 		}
 
 		let help = [
-			...wrapTextWithAnsi(`${action} · PgUp/PgDn`, inner),
-			...wrapTextWithAnsi('Home/g Top · End/G Bottom · /? Search · n/N Repeat', inner)
+			...wrap(`${action} · PgUp/PgDn`, inner),
+			...wrap('Home/g Top · End/G Bottom · /? Search · n/N Repeat', inner)
 		];
 
 		const footerBudget = Math.max(1, height - 4);
 		if (help.length > footerBudget) {
-			help = wrapTextWithAnsi('↑↓ PgUp/PgDn · Home/g End/G · Enter/q/Esc · /? n/N', inner);
+			help = wrap('↑↓ PgUp/PgDn · Home/g End/G · Enter/q/Esc · /? n/N', inner);
 		}
 
 		if (help.length > footerBudget) {
-			help = wrapTextWithAnsi('q/Esc Back · /? n/N', inner).slice(0, footerBudget);
+			help = wrap('q/Esc Back · /? n/N', inner).slice(0, footerBudget);
 		}
 
 		const showSummary = height >= 5;
@@ -675,8 +735,8 @@ class ActivityViewer implements Component {
 			lines.push('');
 		}
 
-		if (this.#searchInput) {
-			lines.push(...this.#searchInput.render(inner).slice(0, 1));
+		if (this.#search) {
+			lines.push(`${this.#search.prompt}${this.#search.value}`);
 		} else {
 			let status = this.#searchStatus;
 			if (!status && this.#pattern) {
@@ -693,7 +753,7 @@ class ActivityViewer implements Component {
 
 		lines.push(...help.map(line => this.#theme.fg('dim', line)));
 
-		return lines.map(line => truncateToWidth(line, inner));
+		return lines.map(line => truncate(line, inner));
 	}
 }
 
@@ -742,15 +802,15 @@ function taskProgress(call: ActivityCall) {
 function alignedText(label: string, metadata: string, width: number) {
 	const available = Math.max(0, width - visibleWidth(metadata) - 1);
 	if (available === 0) {
-		return truncateToWidth(metadata, width);
+		return truncate(metadata, width);
 	}
 
-	const left = truncateToWidth(label, available);
+	const left = truncate(label, available);
 
 	return `${left}${' '.repeat(width - visibleWidth(left) - visibleWidth(metadata))}${metadata}`;
 }
 
-function agentActivity(agent: Record<string, unknown>, width: number, theme: Theme) {
+function agentActivity(agent: Record<string, unknown>, width: number, theme: ExtensionTheme) {
 	const name = progressText(agent.id) || progressText(agent.agent);
 	const state = AGENT_STATE_LABELS.get(String(agent.status))!;
 	const tool = progressText(agent.currentTool);
@@ -777,7 +837,7 @@ function agentActivity(agent: Record<string, unknown>, width: number, theme: The
 	return alignedText(label, status, width);
 }
 
-function liveWidget(calls: readonly ActivityCall[], now: number, width: number, theme: Theme) {
+function liveWidget(calls: readonly ActivityCall[], now: number, width: number, theme: ExtensionTheme) {
 	const running = calls.filter(isLive);
 	if (!running.length) {
 		return undefined;
@@ -827,7 +887,7 @@ function liveWidget(calls: readonly ActivityCall[], now: number, width: number, 
 
 	const border = theme.fg('dim', '│');
 	const lines = [theme.fg('dim', `╭${'─'.repeat(innerWidth)}╮`)];
-	const title = truncateToWidth(heading, innerWidth);
+	const title = truncate(heading, innerWidth);
 	lines.push(`${border}${title}${' '.repeat(innerWidth - visibleWidth(title))}${border}`);
 
 	for (let index = 0; index < rows.length; index++) {
@@ -836,7 +896,7 @@ function liveWidget(calls: readonly ActivityCall[], now: number, width: number, 
 			branch = ' └─ ';
 		}
 
-		const row = truncateToWidth(`${theme.fg('dim', branch)}${rows[index]}`, innerWidth);
+		const row = truncate(`${theme.fg('dim', branch)}${rows[index]}`, innerWidth);
 		lines.push(`${border}${row}${' '.repeat(innerWidth - visibleWidth(row))}${border}`);
 	}
 

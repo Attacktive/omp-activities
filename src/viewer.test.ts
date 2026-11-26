@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { visibleWidth } from '@oh-my-pi/pi-tui';
+import { visibleWidth } from '@oh-my-pi/pi-tui/text/width';
 import { ActivityHistory } from './history';
 import { ActivityViewer, liveWidget } from './viewer';
 
@@ -314,7 +314,7 @@ function fixture(rows = 16) {
 		history.finish(id, { content: [{ type: 'text', text }] }, false, 1200);
 	}
 
-	const tui = { terminal: { rows }, requestRender: () => {} };
+	const tui = { requestRender: () => {}, size: () => ({ columns: 80, rows }), suspend: async <T>(run: () => Promise<T>) => run() };
 	let closed = false;
 	const viewer = new ActivityViewer(history, tui as never, theme as never, () => { closed = true; });
 
@@ -761,7 +761,7 @@ test(
 			inverse: (text: string) => `[${text}]`
 		};
 
-		const tui = { terminal: { rows: 32, columns: 32 }, requestRender: () => {} };
+		const tui = { requestRender: () => {}, size: () => ({ columns: 32, rows: 32 }), suspend: async <T>(run: () => Promise<T>) => run() };
 		const viewer = new ActivityViewer(history, tui as never, taggedTheme as never, () => {});
 		viewer.handleInput('g');
 		viewer.handleInput('\r');
@@ -816,7 +816,7 @@ test(
 		];
 
 		let rendered = '';
-		const tui = { terminal: { rows: 24, columns: 120 }, requestRender: () => {} };
+		const tui = { requestRender: () => {}, size: () => ({ columns: 120, rows: 24 }), suspend: async <T>(run: () => Promise<T>) => run() };
 		const theme = { fg: (_style: string, text: string) => text, bg: (_style: string, text: string) => text, bold: (text: string) => text };
 
 		const ctx = {
@@ -968,7 +968,7 @@ test(
 			inverse: (text: string) => `[${text}]`
 		};
 
-		const tui = { terminal: { rows: 32, columns: 32 }, requestRender: () => {} };
+		const tui = { requestRender: () => {}, size: () => ({ columns: 32, rows: 32 }), suspend: async <T>(run: () => Promise<T>) => run() };
 		const viewer = new ActivityViewer(history, tui as never, taggedTheme as never, () => {});
 		viewer.handleInput('\r');
 		viewer.render(32);
@@ -1000,7 +1000,7 @@ test(
 		history.start('wide', 'read', { path: '目標/파일/🚀/needle.ts' }, 1000);
 		history.finish('wide', { content: [{ type: 'text', text: '🚀目標' }] }, false, 1200);
 
-		const tui = { terminal: { rows: 16, columns: 80 }, requestRender: () => {} };
+		const tui = { requestRender: () => {}, size: () => ({ columns: 80, rows: 16 }), suspend: async <T>(run: () => Promise<T>) => run() };
 		const viewer = new ActivityViewer(history, tui as never, theme as never, () => {});
 		viewer.render(80);
 		viewer.handleInput('/');
@@ -1044,7 +1044,7 @@ test(
 		history.start('long', 'bash', { command: `${'a'.repeat(50000)}needle` }, 1000);
 		history.finish('long', { content: [{ type: 'text', text: 'done' }] }, false, 1200);
 
-		const tui = { terminal: { rows: 16, columns: 80 }, requestRender: () => {} };
+		const tui = { requestRender: () => {}, size: () => ({ columns: 80, rows: 16 }), suspend: async <T>(run: () => Promise<T>) => run() };
 		const viewer = new ActivityViewer(history, tui as never, theme as never, () => {});
 		viewer.render(80);
 		viewer.handleInput('/');

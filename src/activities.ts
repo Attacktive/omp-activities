@@ -1,6 +1,5 @@
-import { matchesKey } from '@oh-my-pi/pi-tui';
-import type { TUI } from '@oh-my-pi/pi-tui';
-import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent';
+import { decodeInput } from '@oh-my-pi/pi-tui/driver/input/decoder';
+import type { ExtensionAPI, ExtensionContext, ExtensionUiHost } from '@oh-my-pi/pi-coding-agent';
 import { findScopedSettings, withActiveSettings } from '@oh-my-pi/pi-coding-agent/config/settings';
 import type { Settings } from '@oh-my-pi/pi-coding-agent/config/settings';
 import { cfgDisplayHideToolActivity } from '@oh-my-pi/pi-coding-agent/modes/settings';
@@ -10,13 +9,20 @@ import { ActivityViewer, isLive, liveWidget } from './viewer';
 
 const WIDGET_KEY = 'dev.attacktive.activity';
 
+function isInterrupt(data: string) {
+	const events = decodeInput(data);
+	const decoded = events.length > 0 ? events : decodeInput(data, { kitty: true });
+
+	return decoded.some(event => event.type === 'key' && event.key.kind !== 'release' && (event.key.id === 'escape' || event.key.id === 'ctrl+c'));
+}
+
 function activity(pi: ExtensionAPI) {
 	const history = new ActivityHistory();
 	let context: ExtensionContext | undefined;
 	let timer: Timer | undefined;
 	let viewer: ActivityViewer | undefined;
-	let viewerTui: TUI | undefined;
-	let widgetTui: TUI | undefined;
+	let viewerUi: ExtensionUiHost | undefined;
+	let widgetUi: ExtensionUiHost | undefined;
 	let widgetMounted = false;
 	let removeInputListener: (() => void) | undefined;
 	let scopedSettings: Settings | undefined;
@@ -71,24 +77,21 @@ function activity(pi: ExtensionAPI) {
 	function syncWidget(ctx: ExtensionContext, live: boolean) {
 		const visible = shouldShowWidget(live);
 		if (visible && !widgetMounted) {
-			ctx.ui.setWidget(
-				WIDGET_KEY,
-				(tui, theme) => {
-					widgetTui = tui;
+			ctx.ui.setWidget(WIDGET_KEY, (ui, theme) => {
+				widgetUi = ui;
 
-					return {
-						render(width: number) {
-							return liveWidget(history.calls, Date.now(), width, theme) ?? [];
-						}
-					};
-				}
-			);
+				return {
+					render(width: number) {
+						return liveWidget(history.calls, Date.now(), width, theme) ?? [];
+					}
+				};
+			});
 
 			widgetMounted = true;
 		} else if (!visible && widgetMounted) {
 			ctx.ui.setWidget(WIDGET_KEY, undefined);
 			widgetMounted = false;
-			widgetTui = undefined;
+			widgetUi = undefined;
 		}
 	}
 
@@ -140,8 +143,8 @@ function activity(pi: ExtensionAPI) {
 		const live = history.calls.some(isLive);
 		syncWidget(context, live);
 
-		widgetTui?.requestRender();
-		viewerTui?.requestRender();
+		widgetUi?.requestRender();
+		viewerUi?.requestRender();
 
 		if (live && timer === undefined) {
 			timer = context.setInterval(refresh, 1000);
@@ -159,10 +162,10 @@ function activity(pi: ExtensionAPI) {
 		interruptCandidates.clear();
 		viewer?.close();
 		viewer = undefined;
-		viewerTui = undefined;
+		viewerUi = undefined;
 		context?.ui.setWidget(WIDGET_KEY, undefined);
 		widgetMounted = false;
-		widgetTui = undefined;
+		widgetUi = undefined;
 		context = ctx;
 
 		if (ctx.agent.kind !== 'main') {
@@ -176,7 +179,7 @@ function activity(pi: ExtensionAPI) {
 
 		if (ctx.mode === 'tui') {
 			removeInputListener = ctx.ui.onTerminalInput(data => {
-				if (!viewer && (matchesKey(data, 'escape') || matchesKey(data, 'ctrl+c'))) {
+				if (!viewer && isInterrupt(data)) {
 					interruptCandidates.clear();
 
 					for (const call of history.calls) {
@@ -208,18 +211,18 @@ function activity(pi: ExtensionAPI) {
 
 		try {
 			await ctx.ui.custom<void>(
-				(tui, theme, _keys, done) => {
-					viewerTui = tui;
-					viewer = new ActivityViewer(history, tui, theme, () => done(undefined));
+				(ui, theme, _keys, done) => {
+					viewerUi = ui;
+					viewer = new ActivityViewer(history, ui, theme, () => done(undefined));
 					refresh();
 
 					return viewer;
 				},
-				{ overlay: true, overlayOptions: { width: '100%', maxHeight: '100%', margin: 0, fullscreen: true, mouseTracking: false } }
+				{ overlay: true, fullscreen: true }
 			);
 		} finally {
 			viewer = undefined;
-			viewerTui = undefined;
+			viewerUi = undefined;
 			refresh();
 		}
 	}
@@ -346,7 +349,7 @@ function activity(pi: ExtensionAPI) {
 			removeInputListener?.();
 			viewer?.close();
 			viewer = undefined;
-			viewerTui = undefined;
+			viewerUi = undefined;
 			context?.ui.setWidget(WIDGET_KEY, undefined);
 		}
 	);
