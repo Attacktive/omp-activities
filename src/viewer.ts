@@ -33,11 +33,29 @@ class SearchDraft {
 
 	constructor(readonly direction: number) {}
 
-	left() {
+	handleKey(id: string, text?: string) {
+		switch (id) {
+			case 'left':
+				this.#left();
+				break;
+			case 'right':
+				this.#right();
+				break;
+			case 'backspace':
+				this.#backspace();
+				break;
+			default:
+				if (text) {
+					this.insert(text);
+				}
+		}
+	}
+
+	#left() {
 		this.#cursor = searchGraphemes.segment(this.value).containing(this.#cursor - 1)?.index ?? 0;
 	}
 
-	right() {
+	#right() {
 		const next = searchGraphemes.segment(this.value).containing(this.#cursor);
 		if (next) {
 			this.#cursor = next.index + next.segment.length;
@@ -54,10 +72,10 @@ class SearchDraft {
 		this.#alignCursor();
 	}
 
-	backspace() {
+	#backspace() {
 		const end = this.#cursor;
-		this.left();
-		this.value = this.value.slice(0, this.#cursor) + this.value.slice(end);
+		this.#left();
+		this.value = `${this.value.slice(0, this.#cursor)}${this.value.slice(end)}`;
 		this.#alignCursor();
 	}
 
@@ -514,14 +532,10 @@ class ActivityViewer implements ExtensionRows {
 		this.#find(draft.direction);
 	}
 
-	#editSearch(data: string) {
+	#editSearch(data: string, draft: SearchDraft) {
 		for (const event of decodedEvents(data)) {
-			if (!this.#search) {
-				return;
-			}
-
 			if (event.type === 'paste') {
-				this.#search.insert(event.paste.text.replace(/[\r\n]/g, ''));
+				draft.insert(event.paste.text.replace(/[\r\n]/g, ''));
 				continue;
 			}
 
@@ -539,24 +553,7 @@ class ActivityViewer implements ExtensionRows {
 				return;
 			}
 
-			if (event.key.id === 'left') {
-				this.#search.left();
-				continue;
-			}
-
-			if (event.key.id === 'right') {
-				this.#search.right();
-				continue;
-			}
-
-			if (event.key.id === 'backspace') {
-				this.#search.backspace();
-				continue;
-			}
-
-			if (event.key.text) {
-				this.#search.insert(event.key.text);
-			}
+			draft.handleKey(event.key.id, event.key.text);
 		}
 	}
 
@@ -625,7 +622,7 @@ class ActivityViewer implements ExtensionRows {
 
 	handleInput(data: string) {
 		if (this.#search) {
-			this.#editSearch(data);
+			this.#editSearch(data, this.#search);
 			this.#ui.requestRender();
 			return;
 		}

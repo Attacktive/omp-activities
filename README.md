@@ -71,8 +71,6 @@ You can add `extension-module:activity` to `disabledExtensions` in your OMP conf
 - In the list view, search moves between matching rows by tool name, target, and status without hiding non-matching rows.
 - Long targets scroll horizontally when selected to reveal matches beyond normal line truncation.
 - Within an expanded call, search scans and highlights wrapped argument and output lines.
-- **Left/Right** moves the search cursor by one whole character; typing, pasting, and **Backspace** edit at the cursor.
-- **q** remains literal text while typing a pattern.
 - **Escape** or **Ctrl+C** cancels search input without leaving the viewer.
 
 ### Clearing history
