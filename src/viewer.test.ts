@@ -539,6 +539,60 @@ test(
 );
 
 test(
+	'inserts at the search cursor and submits the edited pattern in either direction',
+	() => {
+		for (const prompt of ['/', '?']) {
+			const { viewer, history, screen } = fixture();
+			history.calls[1]!.args = { path: 'bash' };
+			if (prompt === '/') {
+				viewer.handleInput('g');
+			}
+
+			for (const key of [prompt, 'bsh', '\x1b[D', '\x1b[D', 'a', '\r']) {
+				viewer.handleInput(key);
+			}
+
+			expect(screen())
+				.toContain('Call 2 / 3');
+		}
+	}
+);
+
+test(
+	'moves across whole graphemes and pastes and backspaces at the cursor',
+	() => {
+		const { viewer, history, screen } = fixture();
+		history.calls[1]!.args = { path: 'a👩‍💻bc' };
+		for (const key of ['?', '👩‍💻c', '\x1b[D', '\x1b[D', 'a', '\x1b[C', '\x1b[200~b🛰️\x1b[201~', '\x7f', '\r']) {
+			viewer.handleInput(key);
+		}
+
+		expect(screen())
+			.toContain('Call 2 / 3');
+	}
+);
+
+test(
+	'keeps the search cursor and adjacent text visible when the query exceeds the terminal width',
+	() => {
+		const { viewer } = fixture();
+		viewer.handleInput('/');
+		viewer.handleInput('0123456789abc');
+		viewer.handleInput('\x1b[D');
+
+		expect(viewer.render(12).join('\n'))
+			.toContain('ab│c');
+
+		for (let index = 0; index < 14; index++) {
+			viewer.handleInput('\x1b[D');
+		}
+
+		expect(viewer.render(12).join('\n'))
+			.toContain('/│012');
+	}
+);
+
+test(
 	'cancels search entry without navigating or discarding the previous pattern',
 	() => {
 		const { viewer, screen, isClosed } = fixture();

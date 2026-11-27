@@ -25,12 +25,72 @@ function keyPresses(data: string) {
 	});
 }
 
-interface SearchDraft {
-	prompt: string;
-	value: string;
-	direction: number;
-}
+const searchGraphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
+class SearchDraft {
+	value = '';
+	#cursor = 0;
+
+	constructor(readonly direction: number) {}
+
+	left() {
+		this.#cursor = searchGraphemes.segment(this.value).containing(this.#cursor - 1)?.index ?? 0;
+	}
+
+	right() {
+		const next = searchGraphemes.segment(this.value).containing(this.#cursor);
+		if (next) {
+			this.#cursor = next.index + next.segment.length;
+		}
+	}
+
+	insert(text: string) {
+		if (!text) {
+			return;
+		}
+
+		this.value = `${this.value.slice(0, this.#cursor)}${text}${this.value.slice(this.#cursor)}`;
+		this.#cursor += text.length;
+		this.#alignCursor();
+	}
+
+	backspace() {
+		const end = this.#cursor;
+		this.left();
+		this.value = this.value.slice(0, this.#cursor) + this.value.slice(end);
+		this.#alignCursor();
+	}
+
+	#alignCursor() {
+		// Insertion or deletion can join graphemes across the edit boundary.
+		if (this.#cursor > 0 && this.#cursor < this.value.length) {
+			const previous = searchGraphemes.segment(this.value).containing(this.#cursor - 1)!;
+			this.#cursor = previous.index + previous.segment.length;
+		}
+	}
+
+	render(width: number) {
+		if (width < 2) {
+			return '│';
+		}
+
+		let prompt = '/';
+		if (this.direction < 0) {
+			prompt = '?';
+		}
+
+		const available = width - 2;
+		const before = this.value.slice(0, this.#cursor);
+		const after = this.value.slice(this.#cursor);
+		const next = searchGraphemes.segment(after).containing(0)?.segment ?? '';
+		const leftBudget = Math.max(0, available - visibleWidth(next));
+		const start = Math.max(0, visibleWidth(before) - leftBudget);
+		const left = sliceCells(before, start, leftBudget, true).text;
+		const right = truncate(after, available - visibleWidth(left), '');
+
+		return `${prompt}${left}│${right}`;
+	}
+}
 
 const STATE_LABELS: Record<ActivityState, string> = {
 	running: 'Running',
@@ -430,7 +490,7 @@ class ActivityViewer implements ExtensionRows {
 
 	#beginSearch(direction: number) {
 		this.#searchStatus = '';
-		this.#search = { prompt: direction < 0 ? '?' : '/', value: '', direction };
+		this.#search = new SearchDraft(direction);
 	}
 
 	#submitSearch() {
@@ -461,7 +521,7 @@ class ActivityViewer implements ExtensionRows {
 			}
 
 			if (event.type === 'paste') {
-				this.#search.value += event.paste.text.replace(/[\r\n]/g, '');
+				this.#search.insert(event.paste.text.replace(/[\r\n]/g, ''));
 				continue;
 			}
 
@@ -479,13 +539,23 @@ class ActivityViewer implements ExtensionRows {
 				return;
 			}
 
+			if (event.key.id === 'left') {
+				this.#search.left();
+				continue;
+			}
+
+			if (event.key.id === 'right') {
+				this.#search.right();
+				continue;
+			}
+
 			if (event.key.id === 'backspace') {
-				this.#search.value = this.#search.value.slice(0, -1);
+				this.#search.backspace();
 				continue;
 			}
 
 			if (event.key.text) {
-				this.#search.value += event.key.text;
+				this.#search.insert(event.key.text);
 			}
 		}
 	}
@@ -736,7 +806,7 @@ class ActivityViewer implements ExtensionRows {
 		}
 
 		if (this.#search) {
-			lines.push(`${this.#search.prompt}${this.#search.value}`);
+			lines.push(this.#search.render(inner));
 		} else {
 			let status = this.#searchStatus;
 			if (!status && this.#pattern) {
